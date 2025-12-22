@@ -1,0 +1,349 @@
+<div class="shell">
+  <header class="top-bar">
+    <div class="top-bar__panel">
+      <div class="top-bar__section top-bar__section--picker">
+        <label class="file-picker">
+          <input type="file" accept="application/pdf" (change)="onFileChange($event)" />
+          <span>ファイルを選択</span>
+        </label>
+      </div>
+      <div class="top-bar__section top-bar__section--controls">
+        <div class="viewer-controls">
+          <div class="control-group">
+            <button type="button" class="ghost" (click)="zoomOut()" [disabled]="!hasPdf()">-</button>
+            <span class="scale-indicator">{{ zoomPercent() }}%</span>
+            <button type="button" class="ghost" (click)="zoomIn()" [disabled]="!hasPdf()">+</button>
+            <button type="button" class="ghost" (click)="resetZoom()" [disabled]="!hasPdf()">等倍</button>
+          </div>
+          <div class="control-group">
+            <button
+              type="button"
+              class="ghost"
+              [class.active]="showObjects()"
+              (click)="toggleObjects()"
+              [disabled]="!hasPdf()"
+            >
+              オブジェクト {{ showObjects() ? 'ON' : 'OFF' }}
+            </button>
+            <button type="button" (click)="downloadPdf()" [disabled]="!hasPdf()">PDF ダウンロード</button>
+          </div>
+        </div>
+      </div>
+      <div class="top-bar__section top-bar__section--status">
+        <div class="status__document">
+          <span class="status-label">現在のドキュメント</span>
+          @if (pdf.pdfName()) {
+            <span class="status-name">{{ pdf.pdfName() }}</span>
+          } @else {
+            <span class="status-name">ファイル未選択</span>
+          }
+        </div>
+        <div class="status__meta">
+          @if (pdf.pageCount() > 0) {
+            <span class="status-pill">{{ pdf.pageCount() }} ページ</span>
+          }
+          @if (pdf.isLoading()) {
+            <span class="status-pill status-pill--loading">読み込み中...</span>
+          }
+          @if (pdf.lastError()) {
+            <span class="status-pill status-pill--error">{{ pdf.lastError() }}</span>
+          }
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section class="viewer" (click)="closeContextMenu()">
+      <div class="hint">
+        <p>右クリックのコンテキストメニューからコメント追加とテキストハイライトを行えます。</p>
+        <p>検索結果は自動で黄色に、選択したテキストをピンクでハイライトされます。</p>
+      </div>
+
+      @if (!hasPdf()) {
+        <div class="empty">
+          <p>PDF を読み込むとここに表示されます。</p>
+        </div>
+      }
+
+      @if (isBrowser && hasPdf()) {
+        <div class="pages">
+          @for (page of pdf.renderedPages(); track trackPage($index, page)) {
+            <div
+              class="page"
+              [attr.id]="pageAnchorId(page.pageNumber)"
+              [attr.data-page]="page.pageNumber"
+              [style.width.px]="page.width"
+              [style.height.px]="page.height"
+              #pageWrapper
+              (contextmenu)="openContextMenu(page, $event)"
+            >
+              <pdf-viewer
+                [src]="pdfSource()"
+                [page]="page.pageNumber"
+                [show-all]="false"
+                [render-text]="true"
+                [original-size]="false"
+                [fit-to-page]="true"
+                [autoresize]="true"
+                [zoom]="pdf.zoom()"
+                [style.width.px]="page.width"
+                [style.height.px]="page.height"
+                (page-rendered)="onPageRendered(page.pageNumber, $event)"
+                (text-layer-rendered)="onTextLayerRendered(page.pageNumber, $event)"
+              ></pdf-viewer>
+
+              @if (showObjects()) {
+                @for (marker of markersFor(page.pageNumber); track trackMarker($index, marker)) {
+                  @for (rect of marker.rects; track $index) {
+                    <div
+                      class="highlight"
+                      [style.left.%]="rect.left"
+                      [style.top.%]="rect.top"
+                      [style.width.%]="rect.width"
+                      [style.height.%]="rect.height"
+                      [style.backgroundColor]="marker.color"
+                      [style.borderColor]="marker.color"
+                      [class.selected]="isSelectedMarker(marker.id)"
+                      (click)="focusMarker(marker, $event)"
+                      [class.draggable]="marker.source === 'selection'"
+                      (pointerdown)="startMarkerDrag(marker, $event)"
+                    ></div>
+                  }
+                  @if (marker.label && marker.rects.length) {
+                    <div
+                      class="highlight-label"
+                      [style.left.%]="marker.rects[0].left"
+                      [style.top.%]="marker.rects[0].top"
+                      [style.borderColor]="marker.color"
+                      [style.backgroundColor]="marker.color"
+                      [class.selected]="isSelectedMarker(marker.id)"
+                      (click)="focusMarker(marker, $event)"
+                      [class.draggable]="marker.source === 'selection'"
+                      (pointerdown)="startMarkerDrag(marker, $event)"
+                    >
+                      {{ marker.label }}
+                    </div>
+                  }
+                }
+
+                @for (comment of commentsFor(page.pageNumber); track trackComment($index, comment)) {
+                  @if (calloutLayout(comment); as callout) {
+                    <div
+                      class="comment"
+                      [style.left.%]="comment.x * 100"
+                      [style.top.%]="comment.y * 100"
+                      [class.selected]="isSelectedComment(comment.id)"
+                      [attr.data-align]="callout.align"
+                      [style.--bubble-x.px]="callout.bubbleX"
+                      [style.--bubble-y.px]="callout.bubbleY"
+                      [style.--line-length.px]="callout.lineLength"
+                      [style.--line-angle]="callout.lineAngle + 'deg'"
+                      [style.--bubble-max-width.px]="comment.bubbleWidth ?? commentLayoutSettings().bubbleWidth"
+                      [style.--bubble-max-height.px]="(comment.bubbleHeight ?? commentLayoutSettings().bubbleHeight) || null"
+                      [style.--line-pointer-center]="(comment.pointerCenter ?? commentLayoutSettings().pointerCenter) + '%'"
+                      (click)="focusComment(comment, $event)"
+                      (pointerdown)="startCommentDrag(comment, $event)"
+                    >
+                      <span class="comment-anchor"></span>
+                      <span class="comment-line"></span>
+                      <span
+                        class="pointer-adjust-handle"
+                        role="presentation"
+                        aria-label="ポインター位置を調整"
+                        (pointerdown)="startPointerAdjust(comment, $event)"
+                      ></span>
+                      <div class="comment-bubble">
+                        <span class="comment-preview">{{ commentPreview(comment) }}</span>
+                        <span
+                          class="bubble-handle bubble-handle-width"
+                          aria-hidden="true"
+                          (pointerdown)="startCommentResize(comment, 'bubbleWidth', $event)"
+                        ></span>
+                        <span
+                          class="bubble-handle bubble-handle-height"
+                          aria-hidden="true"
+                          (pointerdown)="startCommentResize(comment, 'bubbleHeight', $event)"
+                        ></span>
+                      </div>
+                    </div>
+                  }
+                }
+              }
+
+              <div class="page-label">Page {{ page.pageNumber }}</div>
+            </div>
+          }
+        </div>
+      }
+
+      @if (contextMenu().visible) {
+        <div
+          class="context-menu"
+          [style.left.px]="contextMenu().x"
+          [style.top.px]="contextMenu().y"
+          (click)="$event.stopPropagation()"
+        >
+          <button type="button" (click)="addCommentFromContextMenu()">コメントを追加</button>
+          <button type="button" (click)="addHighlightFromSelection()" [disabled]="!contextMenu().canHighlight">
+            選択範囲をピンクでマーク
+          </button>
+          @if (contextMenu().selectionText) {
+            <p class="small-text selection-preview">
+              {{ contextMenu().selectionText }}
+            </p>
+          }
+        </div>
+      }
+    </section>
+
+    <aside class="side-panel">
+      @if (flags.search) {
+        <section class="panel-block">
+          <div class="panel-header">
+            <h3>全文検索</h3>
+            <button type="button" class="ghost" (click)="clearSearch()">クリア</button>
+          </div>
+          <div class="panel-body">
+            <div class="control">
+              <input
+                type="search"
+                placeholder="キーワード"
+                [ngModel]="searchQuery()"
+                (ngModelChange)="searchQuery.set($event)"
+              />
+              <button type="button" (click)="performSearch()" [disabled]="search.isSearching()">検索</button>
+            </div>
+            @if (search.isSearching()) {
+              <div class="small-text">検索中...</div>
+            }
+            @if (search.searchResults().length) {
+              <ul class="list">
+                @for (hit of search.searchResults(); track hit.id) {
+                  <li>
+                    <a [href]="'#' + pageAnchorId(hit.page)">
+                      p{{ hit.page }}: {{ hit.context }}
+                    </a>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        </section>
+      }
+
+      @if (flags.comments) {
+        <section class="panel-block">
+          <div class="panel-header">
+            <h3>コメントカード</h3>
+            <span class="badge">{{ annotations.commentCount() }}</span>
+          </div>
+          <div class="panel-body">
+            <div class="small-text">ページ上で右クリックし「コメントを追加」を選択してください。</div>
+            <div class="list">
+              @for (comment of annotations.allComments(); track trackComment($index, comment)) {
+                <div
+                  class="card selectable"
+                  [class.selected]="isSelectedComment(comment.id)"
+                  (click)="focusComment(comment, $event)"
+                  (keydown.enter)="focusComment(comment, $event)"
+                  tabindex="0"
+                >
+                  <div class="row">
+                    <span class="tag">p{{ comment.page }}</span>
+                    <button class="ghost danger" type="button" (click)="removeComment(comment.id)">削除</button>
+                  </div>
+                  <div class="comment-thread">
+                    @for (message of comment.messages; track message.id) {
+                      <div class="comment-message">
+                        <div class="bubble">
+                          <p>{{ message.text }}</p>
+                        </div>
+                        <span class="timestamp">{{ message.createdAt | date: 'MM/dd HH:mm' }}</span>
+                      </div>
+                    }
+                  </div>
+                  <label class="small-text">返信を追加</label>
+                  <textarea
+                    rows="2"
+                    [placeholder]="comment.messages.length ? '返信を記載' : 'コメントを追加'"
+                    [ngModel]="replyDraft(comment.id)"
+                    (ngModelChange)="setReplyDraft(comment.id, $event)"
+                  ></textarea>
+                  <div class="row">
+                    <span class="small-text">コメントを会話として残せます。</span>
+                    <button type="button" (click)="addReply(comment.id)" [disabled]="!hasReplyDraft(comment.id)">
+                      返信
+                    </button>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        </section>
+      }
+
+      @if (flags.ocr) {
+        <section class="panel-block">
+          <div class="panel-header">
+            <h3>OCR とテキスト抽出</h3>
+          </div>
+          <div class="panel-body">
+            <div class="control">
+              <label>ページ</label>
+              <input
+                type="number"
+                min="1"
+                [max]="pdf.pageCount() || 1"
+                [ngModel]="selectedOcrPage()"
+                (ngModelChange)="selectedOcrPage.set($event)"
+              />
+              <button type="button" (click)="runOcr()" [disabled]="ocr.isRunning()">実行</button>
+            </div>
+            @if (ocr.isRunning()) {
+              <div class="small-text">OCR 実行中...</div>
+            }
+            @if (ocr.result()) {
+              <div class="card ocr-result">
+                <div class="row">
+                  <span class="tag">p{{ ocr.result()?.page }}</span>
+                  <span class="small-text">{{ ocr.result()?.durationMs }} ms</span>
+                </div>
+                <pre>{{ ocr.result()?.text }}</pre>
+              </div>
+            }
+          </div>
+        </section>
+      }
+
+      @if (flags.compare) {
+        <section class="panel-block">
+          <div class="panel-header">
+            <h3>PDF ファイル比較</h3>
+          </div>
+          <div class="panel-body">
+            <label class="file-picker">
+              <input type="file" accept="application/pdf" (change)="onCompareFileChange($event)" />
+              <span>比較用 PDF を選択</span>
+            </label>
+            @if (compare.compareTargetName()) {
+              <div class="small-text">
+                対象: {{ compare.compareTargetName() }}
+              </div>
+            }
+            @if (compare.isRunning()) {
+              <div class="small-text">比較中...</div>
+            }
+            @if (compare.result()) {
+              <div class="card">
+                <p>{{ compare.result()?.note }}</p>
+                <p>追加: {{ compare.result()?.addedPages }} / 削除: {{ compare.result()?.removedPages }}</p>
+                <p>変更ページ: {{ compare.result()?.changedPages?.join(', ') ?? 'なし' }}</p>
+              </div>
+            }
+          </div>
+        </section>
+      }
+    </aside>
+  </div>
+</div>
