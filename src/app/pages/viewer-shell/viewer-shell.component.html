@@ -21,7 +21,7 @@
               class="ghost"
               [class.active]="showObjects()"
               (click)="toggleObjects()"
-              [disabled]="!hasPdf()"
+              [disabled]="!hasPdf() || (!flags.markers && !flags.comments)"
             >
               オブジェクト {{ showObjects() ? 'ON' : 'OFF' }}
             </button>
@@ -93,8 +93,9 @@
                 (text-layer-rendered)="onTextLayerRendered(page.pageNumber, $event)"
               ></pdf-viewer>
 
-              @if (showObjects()) {
-                @for (marker of markersFor(page.pageNumber); track trackMarker($index, marker)) {
+              @if (showObjects() && (flags.markers || flags.comments)) {
+                @if (flags.markers) {
+                  @for (marker of markersFor(page.pageNumber); track trackMarker($index, marker)) {
                   @for (rect of marker.rects; track $index) {
                     <div
                       class="highlight"
@@ -127,7 +128,10 @@
                   }
                 }
 
-                @for (comment of commentsFor(page.pageNumber); track trackComment($index, comment)) {
+                }
+
+                @if (flags.comments) {
+                  @for (comment of commentsFor(page.pageNumber); track trackComment($index, comment)) {
                   @if (calloutLayout(comment); as callout) {
                     <div
                       class="comment"
@@ -169,6 +173,7 @@
                     </div>
                   }
                 }
+                }
               }
 
               <div class="page-label">Page {{ page.pageNumber }}</div>
@@ -184,14 +189,18 @@
           [style.top.px]="contextMenu().y"
           (click)="$event.stopPropagation()"
         >
-          <button type="button" (click)="addCommentFromContextMenu()">コメントを追加</button>
-          <button type="button" (click)="addHighlightFromSelection()" [disabled]="!contextMenu().canHighlight">
-            選択範囲をピンクでマーク
-          </button>
-          @if (contextMenu().selectionText) {
-            <p class="small-text selection-preview">
-              {{ contextMenu().selectionText }}
-            </p>
+          @if (flags.comments) {
+            <button type="button" (click)="addCommentFromContextMenu()">コメントを追加</button>
+          }
+          @if (flags.markers) {
+            <button type="button" (click)="addHighlightFromSelection()" [disabled]="!contextMenu().canHighlight">
+              選択範囲をピンクでマーク
+            </button>
+            @if (contextMenu().selectionText) {
+              <p class="small-text selection-preview">
+                {{ contextMenu().selectionText }}
+              </p>
+            }
           }
         </div>
       }

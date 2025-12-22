@@ -401,6 +401,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!file) {
       return;
     }
+    input.value = '';
     this.resetFeatureStates();
     await this.pdf.loadFile(file);
     this.selectedOcrPage.set(1);
@@ -451,22 +452,31 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected openContextMenu(page: PdfPageRender, event: MouseEvent): void {
+    if (!this.flags.comments && !this.flags.markers) {
+      return;
+    }
     event.preventDefault();
     const pageElement = this.pageElementMap.get(page.pageNumber);
     const selection = this.getValidSelection(page.pageNumber);
     const clickOffset = pageElement ? this.normalizeCoordinates(event, pageElement) : null;
+    const canHighlight = this.flags.markers && Boolean(selection);
+    const selectionText = canHighlight ? selection?.toString() ?? '' : '';
     this.contextMenu.set({
       visible: true,
       x: event.clientX,
       y: event.clientY,
       pageNumber: page.pageNumber,
-      canHighlight: Boolean(selection),
-      selectionText: selection?.toString() ?? '',
+      canHighlight,
+      selectionText,
       clickOffset
     });
   }
 
   protected addHighlightFromSelection(): void {
+    if (!this.flags.markers) {
+      this.closeContextMenu();
+      return;
+    }
     const state = this.contextMenu();
     if (!state.pageNumber) {
       return;
@@ -500,6 +510,10 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected addCommentFromContextMenu(): void {
+    if (!this.flags.comments) {
+      this.closeContextMenu();
+      return;
+    }
     const state = this.contextMenu();
     if (!state.pageNumber || !state.clickOffset) {
       this.closeContextMenu();
