@@ -14,7 +14,7 @@ export class CompareFacadeService {
   private readonly summary = signal<CompareSummary | null>(null);
   private readonly running = signal(false);
   private readonly targetName = signal<string | null>(null);
-  private readonly targetSource = signal<Uint8Array | null>(null);
+  private readonly targetSource = signal<string | null>(null);
   private readonly targetPages = signal<PdfPageRender[]>([]);
   private readonly targetPageCount = signal(0);
   private targetDoc: PDFDocumentProxy | null = null;
@@ -58,9 +58,9 @@ export class CompareFacadeService {
     try {
       const pdfjs = await this.ensurePdfJs();
       const buffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      const targetDoc = await pdfjs.getDocument({ data: bytes }).promise;
-      await this.setTargetDoc(targetDoc, bytes);
+      const targetDoc = await pdfjs.getDocument({ data: buffer.slice(0) }).promise;
+      const sourceUrl = this.createObjectUrl(buffer, file.type);
+      await this.setTargetDoc(targetDoc, sourceUrl);
       const targetTexts = await this.collectAllText(targetDoc);
       this.summary.set(this.diff(baseTexts, targetTexts));
     } catch (err) {
@@ -91,11 +91,12 @@ export class CompareFacadeService {
     await this.renderTargetPages(this.targetDoc);
   }
 
-  private async setTargetDoc(doc: PDFDocumentProxy, source: Uint8Array): Promise<void> {
+  private async setTargetDoc(doc: PDFDocumentProxy, source: string): Promise<void> {
     if (this.targetDoc && this.targetDoc !== doc) {
       this.targetDoc.destroy();
     }
     this.targetDoc = doc;
+    this.revokeTargetUrl();
     this.targetSource.set(source);
     this.targetPageCount.set(doc.numPages);
     await this.renderTargetPages(doc);
@@ -104,6 +105,7 @@ export class CompareFacadeService {
   private clearTarget(): void {
     this.targetDoc?.destroy();
     this.targetDoc = null;
+    this.revokeTargetUrl();
     this.targetSource.set(null);
     this.targetPages.set([]);
     this.targetPageCount.set(0);
@@ -165,5 +167,18 @@ export class CompareFacadeService {
       return pdfjs;
     });
     return this.pdfjsPromise;
+  }
+
+  private createObjectUrl(buffer: ArrayBuffer, mimeType: string): string {
+    const type = mimeType && mimeType.trim().length > 0 ? mimeType : 'application/pdf';
+    return URL.createObjectURL(new Blob([buffer], { type }));
+  }
+
+  private revokeTargetUrl(): void {
+    const current = this.targetSource();
+    if (!this.isBrowser || !current) {
+      return;
+    }
+    URL.revokeObjectURL(current);
   }
 }

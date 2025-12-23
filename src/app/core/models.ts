@@ -20,6 +20,7 @@ export interface Marker {
   rects: HighlightRect[];
   text?: string;
   source: 'search' | 'selection';
+  origin?: 'app' | 'pdf';
 }
 
 export interface CommentMessage {
@@ -30,14 +31,30 @@ export interface CommentMessage {
 
 export interface CommentCard {
   id: string;
+  title: string;
   page: number;
-  x: number;
-  y: number;
+  anchorX: number;
+  anchorY: number;
+  bubbleX: number;
+  bubbleY: number;
   messages: CommentMessage[];
   createdAt: number;
   bubbleWidth?: number;
   bubbleHeight?: number;
-  pointerCenter?: number;
+  origin?: 'app' | 'pdf';
+}
+
+export interface PdfHighlightAnnotation {
+  id: string;
+  page: number;
+  rects: HighlightRect[];
+  color: string;
+  contents?: string;
+}
+
+export interface PdfAnnotationExport {
+  highlights: PdfHighlightAnnotation[];
+  comments: CommentCard[];
 }
 
 export interface SearchHit {
@@ -47,8 +64,12 @@ export interface SearchHit {
   index: number;
 }
 
+export type OcrScope = 'page' | 'all';
+
 export interface OcrResult {
-  page: number;
+  scope: OcrScope;
+  page?: number;
+  pageCount?: number;
   text: string;
   durationMs: number;
   source: 'text-layer' | 'ocr-simulated';

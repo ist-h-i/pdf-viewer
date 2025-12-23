@@ -1,22 +1,37 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { CommentCard, CommentMessage, Marker } from '../../core/models';
 
-const DEFAULT_COMMENT_BUBBLE_WIDTH = 240;
-const DEFAULT_COMMENT_BUBBLE_HEIGHT = 0;
-const DEFAULT_COMMENT_POINTER_CENTER = 50;
+const DEFAULT_COMMENT_BUBBLE_WIDTH = 260;
+const DEFAULT_COMMENT_BUBBLE_HEIGHT = 140;
+const DEFAULT_COMMENT_BUBBLE_OFFSET = 0.12;
 
 @Injectable({ providedIn: 'root' })
 export class AnnotationFacadeService {
   private readonly selectionHighlights = signal<Marker[]>([]);
   private readonly searchHighlights = signal<Marker[]>([]);
   private readonly comments = signal<CommentCard[]>([]);
+  private readonly importedMarkers = signal<Marker[]>([]);
+  private readonly importedComments = signal<CommentCard[]>([]);
 
-  readonly allMarkers = computed(() => [...this.searchHighlights(), ...this.selectionHighlights()]);
-  readonly userMarkers = this.selectionHighlights.asReadonly();
-  readonly allComments = this.comments.asReadonly();
+  readonly allMarkers = computed(() => [
+    ...this.searchHighlights(),
+    ...this.selectionHighlights(),
+    ...this.importedMarkers()
+  ]);
+  readonly userMarkers = computed(() => [
+    ...this.selectionHighlights(),
+    ...this.importedMarkers()
+  ]);
+  readonly exportMarkers = this.selectionHighlights.asReadonly();
+  readonly allComments = computed(() => [...this.comments(), ...this.importedComments()]);
+  readonly exportComments = this.comments.asReadonly();
 
-  readonly markerCount = computed(() => this.selectionHighlights().length);
-  readonly commentCount = computed(() => this.comments().length);
+  readonly markerCount = computed(
+    () => this.selectionHighlights().length + this.importedMarkers().length
+  );
+  readonly commentCount = computed(
+    () => this.comments().length + this.importedComments().length
+  );
 
   addMarker(
     page: number,
@@ -33,7 +48,8 @@ export class AnnotationFacadeService {
       color,
       rects,
       source,
-      text
+      text,
+      origin: 'app'
     };
     if (source === 'search') {
       this.searchHighlights.update((list) => [...list.filter((m) => m.page !== page), marker]);
@@ -73,16 +89,27 @@ export class AnnotationFacadeService {
     const trimmed = text.trim();
     const messages = trimmed ? [this.createMessage(trimmed)] : [];
     const createdAt = messages[0]?.createdAt ?? Date.now();
+    const anchorX = this.clamp01(x);
+    const anchorY = this.clamp01(y);
+    const offsetX = anchorX > 0.6 ? -DEFAULT_COMMENT_BUBBLE_OFFSET : DEFAULT_COMMENT_BUBBLE_OFFSET;
+    const offsetY = anchorY > 0.6 ? -DEFAULT_COMMENT_BUBBLE_OFFSET : DEFAULT_COMMENT_BUBBLE_OFFSET;
+    const bubbleX = this.clamp01(anchorX + offsetX);
+    const bubbleY = this.clamp01(anchorY + offsetY);
+    const titleIndex = this.comments().length + 1;
+    const title = `コメント${titleIndex}`;
     const comment: CommentCard = {
       id: crypto.randomUUID ? crypto.randomUUID() : `comment-${Date.now()}`,
+      title,
       page,
-      x,
-      y,
+      anchorX,
+      anchorY,
+      bubbleX,
+      bubbleY,
       messages,
       createdAt,
       bubbleWidth: DEFAULT_COMMENT_BUBBLE_WIDTH,
       bubbleHeight: DEFAULT_COMMENT_BUBBLE_HEIGHT,
-      pointerCenter: DEFAULT_COMMENT_POINTER_CENTER
+      origin: 'app'
     };
     this.comments.update((list) => [...list, comment]);
     return comment;
@@ -112,9 +139,16 @@ export class AnnotationFacadeService {
     );
   }
 
+  updateCommentTitle(id: string, title: string): void {
+    const nextTitle = title.trim();
+    this.comments.update((list) =>
+      list.map((c) => (c.id === id ? { ...c, title: nextTitle } : c))
+    );
+  }
+
   updateCommentLayout(
     id: string,
-    layout: Partial<Pick<CommentCard, 'bubbleWidth' | 'bubbleHeight' | 'pointerCenter'>>
+    layout: Partial<Pick<CommentCard, 'bubbleWidth' | 'bubbleHeight'>>
   ): void {
     this.comments.update((list) => list.map((c) => (c.id === id ? { ...c, ...layout } : c)));
   }
@@ -123,18 +157,28 @@ export class AnnotationFacadeService {
     this.comments.update((list) => list.filter((c) => c.id !== id));
   }
 
-  moveComment(id: string, x: number, y: number): void {
-    this.comments.update((list) => list.map((c) => (c.id === id ? { ...c, x, y } : c)));
+  moveCommentAnchor(id: string, anchorX: number, anchorY: number): void {
+    this.comments.update((list) =>
+      list.map((c) => (c.id === id ? { ...c, anchorX, anchorY } : c))
+    );
+  }
+
+  moveCommentBubble(id: string, bubbleX: number, bubbleY: number): void {
+    this.comments.update((list) =>
+      list.map((c) => (c.id === id ? { ...c, bubbleX, bubbleY } : c))
+    );
   }
 
   reset(): void {
     this.selectionHighlights.set([]);
     this.searchHighlights.set([]);
     this.comments.set([]);
+    this.importedMarkers.set([]);
+    this.importedComments.set([]);
   }
 
   commentsByPage(page: number): CommentCard[] {
-    return this.comments().filter((c) => c.page === page);
+    return this.allComments().filter((c) => c.page === page);
   }
 
   markersByPage(page: number): Marker[] {
@@ -143,5 +187,23 @@ export class AnnotationFacadeService {
 
   setSearchHighlights(markers: Marker[]): void {
     this.searchHighlights.set(markers);
+  }
+
+  setImportedMarkers(markers: Marker[]): void {
+    this.importedMarkers.set(markers);
+  }
+
+  setImportedComments(comments: CommentCard[]): void {
+    this.importedComments.set(comments);
+  }
+
+  private clamp01(value: number): number {
+    if (value < 0) {
+      return 0;
+    }
+    if (value > 1) {
+      return 1;
+    }
+    return value;
   }
 }

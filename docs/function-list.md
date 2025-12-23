@@ -13,6 +13,8 @@
 
 ### 2) ビューア領域
 - PDF ページ表示（ページ単位で縦スクロール）
+- 比較モード（左右分割表示）：比較元/比較対象 PDF を並列表示
+- 比較差分ハイライト（ページ枠/テキスト差分）
 - 右クリックのコンテキストメニュー
   - コメント追加（クリック位置に配置）
   - 選択テキストのハイライト追加
@@ -36,6 +38,7 @@
 - PDF 比較（テキストベース）
   - 比較対象 PDF の選択
   - 追加/削除ページ数、変更ページ一覧、メモ表示
+  - 変更ページ一覧から該当ページへジャンプ（左右ビューアと連動）
 
 ## 主な内部コンポーネント/サービス
 - `src/app/pages/viewer-shell/viewer-shell.component.*`
@@ -59,3 +62,6 @@
 - `src/app/core/pdf-worker.ts`
   - PDF.js worker の参照パス定義
 
+## 関連ドキュメント
+- コメント: [comment-design.md](comment-design.md) / [comment-uiux-redesign.md](comment-uiux-redesign.md)
+- ハイライト: [highlight-design.md](highlight-design.md) / [bug-report-selection-highlight-disabled.md](bug-report-selection-highlight-disabled.md)

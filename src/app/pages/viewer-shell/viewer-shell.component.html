@@ -1,4 +1,4 @@
-<div class="shell">
+﻿<div class="shell">
   <header class="top-bar">
     <div class="top-bar__panel">
       <div class="top-bar__section top-bar__section--picker">
@@ -57,7 +57,7 @@
     <section class="viewer" (click)="closeContextMenu()">
       <div class="hint">
         <p>右クリックのコンテキストメニューからコメント追加とテキストハイライトを行えます。</p>
-        <p>検索結果は自動で黄色に、選択したテキストをピンクでハイライトされます。</p>
+        <p>検索結果は自動でハイライト表示されます。</p>
       </div>
 
       @if (!hasPdf()) {
@@ -72,119 +72,217 @@
             @if (flags.compare && compare.compareTargetSource()) {
               <div class="viewer-pane__label">現在表示中</div>
             }
-            <div class="pages">
-          @for (page of pdf.renderedPages(); track trackPage($index, page)) {
-            <div
-              class="page"
-              [class.page--changed]="isChangedPage(page.pageNumber)"
-              [attr.id]="pageAnchorId(page.pageNumber)"
-              [attr.data-page]="page.pageNumber"
-              [style.width.px]="page.width"
-              [style.height.px]="page.height"
-              #pageWrapper
-              (contextmenu)="openContextMenu(page, $event)"
-            >
-              <pdf-viewer
-                [src]="pdfSource()"
-                [page]="page.pageNumber"
-                [show-all]="false"
-                [render-text]="true"
-                [original-size]="false"
-                [fit-to-page]="true"
-                [autoresize]="true"
-                [zoom]="pdf.zoom()"
-                [style.width.px]="page.width"
-                [style.height.px]="page.height"
-                (page-rendered)="onPageRendered(page.pageNumber, $event)"
-                (text-layer-rendered)="onTextLayerRendered(page.pageNumber, $event)"
-              ></pdf-viewer>
+            <div class="pages" #pagesHost (contextmenu)="openContextMenuFromViewer($event)">
+              <div class="pdf-viewer-host" #pdfViewerHost>
+                <pdf-viewer
+                  [src]="pdfSource()"
+                  [show-all]="true"
+                  [render-text]="true"
+                  [original-size]="true"
+                  [fit-to-page]="true"
+                  [autoresize]="true"
+                  [zoom]="pdf.zoom()"
+                  (page-rendered)="onPageRendered($event)"
+                  (text-layer-rendered)="onTextLayerRendered($event)"
+                ></pdf-viewer>
+              </div>
+              <div class="page-overlays">
+                @for (overlay of pageOverlays(); track trackPageOverlay($index, overlay)) {
+                  <div
+                    class="page-overlay"
+                    [class.page-overlay--changed]="isChangedPage(overlay.pageNumber)"
+                    [attr.id]="pageAnchorId(overlay.pageNumber)"
+                    [attr.data-page]="overlay.pageNumber"
+                    [style.left.px]="overlay.left"
+                    [style.top.px]="overlay.top"
+                    [style.width.px]="overlay.width"
+                    [style.height.px]="overlay.height"
+                  >
+                    @if (flags.compare && compare.compareTargetSource()) {
+                      @for (rect of diffRectsFor(overlay.pageNumber); track $index) {
+                        <div
+                          class="diff-highlight"
+                          [style.left.%]="rect.left"
+                          [style.top.%]="rect.top"
+                          [style.width.%]="rect.width"
+                          [style.height.%]="rect.height"
+                        ></div>
+                      }
+                    }
 
-              @if (showObjects() && (flags.markers || flags.comments)) {
-                @if (flags.markers) {
-                  @for (marker of markersFor(page.pageNumber); track trackMarker($index, marker)) {
-                  @for (rect of marker.rects; track $index) {
-                    <div
-                      class="highlight"
-                      [style.left.%]="rect.left"
-                      [style.top.%]="rect.top"
-                      [style.width.%]="rect.width"
-                      [style.height.%]="rect.height"
-                      [style.backgroundColor]="marker.color"
-                      [style.borderColor]="marker.color"
-                      [class.selected]="isSelectedMarker(marker.id)"
-                      (click)="focusMarker(marker, $event)"
-                      [class.draggable]="marker.source === 'selection'"
-                      (pointerdown)="startMarkerDrag(marker, $event)"
-                    ></div>
-                  }
-                  @if (marker.label && marker.rects.length) {
-                    <div
-                      class="highlight-label"
-                      [style.left.%]="marker.rects[0].left"
-                      [style.top.%]="marker.rects[0].top"
-                      [style.borderColor]="marker.color"
-                      [style.backgroundColor]="marker.color"
-                      [class.selected]="isSelectedMarker(marker.id)"
-                      (click)="focusMarker(marker, $event)"
-                      [class.draggable]="marker.source === 'selection'"
-                      (pointerdown)="startMarkerDrag(marker, $event)"
-                    >
-                      {{ marker.label }}
-                    </div>
-                  }
-                }
+                    @if (showObjects() && (flags.markers || flags.comments)) {
+                      @if (flags.markers) {
+                        @for (marker of markersFor(overlay.pageNumber); track trackMarker($index, marker)) {
+                          @for (rect of marker.rects; track $index) {
+                            <div
+                              class="highlight"
+                              [style.left.%]="rect.left"
+                              [style.top.%]="rect.top"
+                              [style.width.%]="rect.width"
+                              [style.height.%]="rect.height"
+                              [style.backgroundColor]="marker.color"
+                              [style.borderColor]="marker.color"
+                              [class.selected]="isSelectedMarker(marker.id)"
+                              (click)="focusMarker(marker, $event)"
+                              [class.draggable]="marker.source === 'selection' && !isReadOnlyMarker(marker)"
+                              (pointerdown)="startMarkerDrag(marker, $event)"
+                            ></div>
+                          }
+                          @if (marker.label && marker.rects.length) {
+                            <div
+                              class="highlight-label"
+                              [style.left.%]="marker.rects[0].left"
+                              [style.top.%]="marker.rects[0].top"
+                              [style.borderColor]="marker.color"
+                              [style.backgroundColor]="marker.color"
+                              [class.selected]="isSelectedMarker(marker.id)"
+                              (click)="focusMarker(marker, $event)"
+                              [class.draggable]="marker.source === 'selection' && !isReadOnlyMarker(marker)"
+                              (pointerdown)="startMarkerDrag(marker, $event)"
+                            >
+                              {{ marker.label }}
+                            </div>
+                          }
+                        }
+                      }
 
-                }
+                      @if (flags.comments) {
+                        @for (comment of commentsFor(overlay.pageNumber); track trackComment($index, comment)) {
+                          @if (calloutLayout(comment); as callout) {
+                            <div
+                              class="comment"
+                              [class.selected]="isSelectedComment(comment.id)"
+                              [style.--line-length.px]="callout.lineLength"
+                              [style.--line-angle]="callout.lineAngle + 'deg'"
+                              [style.--bubble-width.px]="comment.bubbleWidth ?? commentLayoutSettings().bubbleWidth"
+                              [style.--bubble-height.px]="(comment.bubbleHeight ?? commentLayoutSettings().bubbleHeight) || commentLayoutSettings().bubbleHeight"
+                            >
+                              <span
+                                class="comment-anchor"
+                                [style.left.%]="comment.anchorX * 100"
+                                [style.top.%]="comment.anchorY * 100"
+                                (click)="focusComment(comment, $event)"
+                                (pointerdown)="startCommentAnchorDrag(comment, $event)"
+                                aria-label="コメントのアンカーを移動"
+                              ></span>
+                              <span
+                                class="comment-line"
+                                [style.left.%]="comment.anchorX * 100"
+                                [style.top.%]="comment.anchorY * 100"
+                              ></span>
+                              <div
+                                class="comment-bubble"
+                                [style.left.%]="comment.bubbleX * 100"
+                                [style.top.%]="comment.bubbleY * 100"
+                                (click)="focusComment(comment, $event)"
+                              >
+                                <div
+                                  class="comment-bubble__header"
+                                  (pointerdown)="startCommentBubbleDrag(comment, $event)"
+                                >
+                                  @if (isEditingTitle(comment.id)) {
+                                    <input
+                                      type="text"
+                                      class="comment-bubble__title-input"
+                                      [ngModel]="titleDraft(comment.id)"
+                                      (ngModelChange)="setTitleDraft(comment.id, $event)"
+                                      (keyup.enter)="saveTitleEdit(comment.id)"
+                                      (keydown.escape)="cancelTitleEdit(comment.id)"
+                                      (blur)="saveTitleEdit(comment.id)"
+                                      (pointerdown)="$event.stopPropagation()"
+                                      aria-label="コメントタイトル"
+                                      placeholder="コメントタイトル"
+                                      autofocus
+                                    />
+                                  } @else {
+                                    <span class="comment-bubble__title">
+                                      {{ commentTitle(comment) }}
+                                    </span>
+                                  }
+                                  <span class="comment-bubble__meta">p{{ comment.page }}</span>
+                                  @if (!isReadOnlyComment(comment)) {
+                                    <button
+                                      type="button"
+                                      class="comment-bubble__edit"
+                                      (click)="startTitleEdit(comment, $event)"
+                                      (pointerdown)="$event.stopPropagation()"
+                                      aria-label="タイトルを編集"
+                                    >
+                                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                        <path
+                                          d="M4 17.25V20h2.75L17.81 8.94l-2.75-2.75L4 17.25zm15.71-9.04a1 1 0 0 0 0-1.41l-2.51-2.5a1 1 0 0 0-1.41 0l-1.7 1.7 3.92 3.92 1.7-1.71z"
+                                        />
+                                      </svg>
+                                    </button>
+                                  }
+                                </div>
+                                <div class="comment-bubble__body" #commentBody [attr.data-comment-id]="comment.id">
+                                  <div class="comment-bubble__thread">
+                                    @for (message of comment.messages; track message.id) {
+                                      <div class="comment-bubble__message">
+                                        <p>{{ message.text }}</p>
+                                        <span class="comment-bubble__timestamp">
+                                          {{ message.createdAt | date: 'MM/dd HH:mm' }}
+                                        </span>
+                                      </div>
+                                    } @empty {
+                                      <p class="comment-bubble__empty">コメントはまだありません。</p>
+                                    }
+                                  </div>
+                                </div>
+                                @if (isSelectedComment(comment.id) && !isReadOnlyComment(comment)) {
+                                  <div class="comment-bubble__actions">
+                                    <textarea
+                                      #replyTextarea
+                                      rows="2"
+                                      [attr.data-comment-id]="comment.id"
+                                      [placeholder]="comment.messages.length ? '返信を記入' : 'コメントを追加'"
+                                      [ngModel]="replyDraft(comment.id)"
+                                      (ngModelChange)="setReplyDraft(comment.id, $event)"
+                                      (keydown)="onReplyKeydown(comment.id, $event)"
+                                      (pointerdown)="$event.stopPropagation()"
+                                    ></textarea>
+                                    <div class="comment-bubble__actions-row">
+                                      <span class="small-text">コメントを会話として残せます。</span>
+                                      <button
+                                        type="button"
+                                        (click)="addReply(comment.id)"
+                                        [disabled]="!hasReplyDraft(comment.id)"
+                                        (pointerdown)="$event.stopPropagation()"
+                                      >
+                                        返信
+                                      </button>
+                                    </div>
+                                  </div>
+                                }
+                                @if (!isReadOnlyComment(comment)) {
+                                  <span
+                                    class="bubble-handle bubble-handle-width"
+                                    aria-hidden="true"
+                                    (pointerdown)="startCommentResize(comment, 'bubbleHeight', $event)"
+                                  ></span>
+                                  <span
+                                    class="bubble-handle bubble-handle-height"
+                                    aria-hidden="true"
+                                    (pointerdown)="startCommentResize(comment, 'bubbleWidth', $event)"
+                                  ></span>
+                                  <span
+                                    class="bubble-handle bubble-handle-corner"
+                                    aria-hidden="true"
+                                    (pointerdown)="startCommentResize(comment, 'bubbleBoth', $event)"
+                                  ></span>
+                                }
+                              </div>
+                            </div>
+                          }
+                        }
+                      }
+                    }
 
-                @if (flags.comments) {
-                  @for (comment of commentsFor(page.pageNumber); track trackComment($index, comment)) {
-                  @if (calloutLayout(comment); as callout) {
-                    <div
-                      class="comment"
-                      [style.left.%]="comment.x * 100"
-                      [style.top.%]="comment.y * 100"
-                      [class.selected]="isSelectedComment(comment.id)"
-                      [attr.data-align]="callout.align"
-                      [style.--bubble-x.px]="callout.bubbleX"
-                      [style.--bubble-y.px]="callout.bubbleY"
-                      [style.--line-length.px]="callout.lineLength"
-                      [style.--line-angle]="callout.lineAngle + 'deg'"
-                      [style.--bubble-max-width.px]="comment.bubbleWidth ?? commentLayoutSettings().bubbleWidth"
-                      [style.--bubble-max-height.px]="(comment.bubbleHeight ?? commentLayoutSettings().bubbleHeight) || null"
-                      [style.--line-pointer-center]="(comment.pointerCenter ?? commentLayoutSettings().pointerCenter) + '%'"
-                      (click)="focusComment(comment, $event)"
-                      (pointerdown)="startCommentDrag(comment, $event)"
-                    >
-                      <span class="comment-anchor"></span>
-                      <span class="comment-line"></span>
-                      <span
-                        class="pointer-adjust-handle"
-                        role="presentation"
-                        aria-label="ポインター位置を調整"
-                        (pointerdown)="startPointerAdjust(comment, $event)"
-                      ></span>
-                      <div class="comment-bubble">
-                        <span class="comment-preview">{{ commentPreview(comment) }}</span>
-                        <span
-                          class="bubble-handle bubble-handle-width"
-                          aria-hidden="true"
-                          (pointerdown)="startCommentResize(comment, 'bubbleWidth', $event)"
-                        ></span>
-                        <span
-                          class="bubble-handle bubble-handle-height"
-                          aria-hidden="true"
-                          (pointerdown)="startCommentResize(comment, 'bubbleHeight', $event)"
-                        ></span>
-                      </div>
-                    </div>
-                  }
+                    <div class="page-label">Page {{ overlay.pageNumber }}</div>
+                  </div>
                 }
-                }
-              }
-
-              <div class="page-label">Page {{ page.pageNumber }}</div>
-            </div>
-          }
+              </div>
             </div>
           </div>
           @if (flags.compare && compare.compareTargetSource()) {
@@ -195,33 +293,45 @@
                   <p>比較対象 PDF を読み込み中...</p>
                 </div>
               }
-              <div class="pages compare-pages">
-                @for (page of compare.compareTargetPages(); track trackPage($index, page)) {
-                  <div
-                    class="page compare-page"
-                    [class.page--changed]="isChangedPage(page.pageNumber)"
-                    [attr.id]="comparePageAnchorId(page.pageNumber)"
-                    [attr.data-compare-page]="page.pageNumber"
-                    [style.width.px]="page.width"
-                    [style.height.px]="page.height"
-                    #comparePageWrapper
-                  >
-                    <pdf-viewer
-                      [src]="comparePdfSource()"
-                      [page]="page.pageNumber"
-                      [show-all]="false"
-                      [render-text]="true"
-                      [original-size]="false"
-                      [fit-to-page]="true"
-                      [autoresize]="true"
-                      [zoom]="pdf.zoom()"
-                      [style.width.px]="page.width"
-                      [style.height.px]="page.height"
-                      (page-rendered)="onComparePageRendered(page.pageNumber, $event)"
-                    ></pdf-viewer>
-                    <div class="page-label">Page {{ page.pageNumber }}</div>
-                  </div>
-                }
+              <div class="pages compare-pages" #comparePagesHost>
+                <div class="pdf-viewer-host" #comparePdfViewerHost>
+                  <pdf-viewer
+                    [src]="comparePdfSource()"
+                    [show-all]="true"
+                    [render-text]="true"
+                    [original-size]="true"
+                    [fit-to-page]="true"
+                    [autoresize]="true"
+                    [zoom]="pdf.zoom()"
+                    (page-rendered)="onComparePageRendered($event)"
+                    (text-layer-rendered)="onCompareTextLayerRendered($event)"
+                  ></pdf-viewer>
+                </div>
+                <div class="page-overlays">
+                  @for (overlay of comparePageOverlays(); track trackPageOverlay($index, overlay)) {
+                    <div
+                      class="page-overlay"
+                      [class.page-overlay--changed]="isChangedPage(overlay.pageNumber)"
+                      [attr.id]="comparePageAnchorId(overlay.pageNumber)"
+                      [attr.data-compare-page]="overlay.pageNumber"
+                      [style.left.px]="overlay.left"
+                      [style.top.px]="overlay.top"
+                      [style.width.px]="overlay.width"
+                      [style.height.px]="overlay.height"
+                    >
+                      @for (rect of compareDiffRectsFor(overlay.pageNumber); track $index) {
+                        <div
+                          class="diff-highlight"
+                          [style.left.%]="rect.left"
+                          [style.top.%]="rect.top"
+                          [style.width.%]="rect.width"
+                          [style.height.%]="rect.height"
+                        ></div>
+                      }
+                      <div class="page-label">Page {{ overlay.pageNumber }}</div>
+                    </div>
+                  }
+                </div>
               </div>
             </div>
           }
@@ -240,8 +350,21 @@
           }
           @if (flags.markers) {
             <button type="button" (click)="addHighlightFromSelection()" [disabled]="!contextMenu().canHighlight">
-              選択範囲をピンクでマーク
+              選択範囲をハイライト
             </button>
+            <div class="highlight-swatches">
+              @for (swatch of highlightSwatches; track swatch.id) {
+                <button
+                  type="button"
+                  class="highlight-swatch"
+                  [class.selected]="swatch.color === selectedHighlightColor()"
+                  [style.backgroundColor]="swatch.color"
+                  (click)="selectHighlightColor(swatch.color)"
+                  [attr.aria-label]="swatch.label"
+                  [attr.aria-pressed]="swatch.color === selectedHighlightColor()"
+                ></button>
+              }
+            </div>
             @if (contextMenu().selectionText) {
               <p class="small-text selection-preview">
                 {{ contextMenu().selectionText }}
@@ -287,49 +410,90 @@
         </section>
       }
 
+      @if (flags.markers) {
+        <section class="panel-block">
+          <div class="panel-header">
+            <h3>ハイライト</h3>
+            <span class="badge">{{ highlightCount() }}</span>
+          </div>
+          <div class="panel-body">
+            <div class="small-text">ページ上で右クリックし「選択範囲をハイライト」を選択してください。</div>
+            <div class="highlight-list">
+              @for (section of highlightSections(); track trackHighlightSection($index, section)) {
+                <div class="highlight-section">
+                  <div class="highlight-section__header">
+                    <span class="highlight-section__label">p{{ section.page }}</span>
+                    <span class="highlight-section__count">{{ section.highlights.length }}</span>
+                  </div>
+                  <div class="highlight-section__items">
+                    @for (highlight of section.highlights; track trackHighlightItem($index, highlight)) {
+                      <div
+                        class="highlight-item"
+                        (click)="focusHighlight(section.page, $event)"
+                        (keydown.enter)="focusHighlight(section.page, $event)"
+                        tabindex="0"
+                      >
+                        <span class="highlight-item__swatch" [style.backgroundColor]="highlight.color"></span>
+                        <span class="highlight-item__title" [attr.title]="highlightLabel(highlight)">
+                          {{ highlightLabel(highlight) }}
+                        </span>
+                        @if (!isReadOnlyMarker(highlight)) {
+                          <button
+                            class="ghost danger highlight-item__delete"
+                            type="button"
+                            (click)="removeHighlight(highlight.id); $event.stopPropagation()"
+                          >
+                            削除
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        </section>
+      }
+
       @if (flags.comments) {
         <section class="panel-block">
           <div class="panel-header">
-            <h3>コメントカード</h3>
+            <h3>コメント一覧</h3>
             <span class="badge">{{ annotations.commentCount() }}</span>
           </div>
           <div class="panel-body">
             <div class="small-text">ページ上で右クリックし「コメントを追加」を選択してください。</div>
-            <div class="list">
-              @for (comment of annotations.allComments(); track trackComment($index, comment)) {
-                <div
-                  class="card selectable"
-                  [class.selected]="isSelectedComment(comment.id)"
-                  (click)="focusComment(comment, $event)"
-                  (keydown.enter)="focusComment(comment, $event)"
-                  tabindex="0"
-                >
-                  <div class="row">
-                    <span class="tag">p{{ comment.page }}</span>
-                    <button class="ghost danger" type="button" (click)="removeComment(comment.id)">削除</button>
+            <div class="comment-list">
+              @for (section of commentSections(); track trackCommentSection($index, section)) {
+                <div class="comment-section">
+                  <div class="comment-section__header">
+                    <span class="comment-section__label">p{{ section.page }}</span>
+                    <span class="comment-section__count">{{ section.comments.length }}</span>
                   </div>
-                  <div class="comment-thread">
-                    @for (message of comment.messages; track message.id) {
-                      <div class="comment-message">
-                        <div class="bubble">
-                          <p>{{ message.text }}</p>
-                        </div>
-                        <span class="timestamp">{{ message.createdAt | date: 'MM/dd HH:mm' }}</span>
+                  <div class="comment-section__items">
+                    @for (comment of section.comments; track trackComment($index, comment)) {
+                      <div
+                        class="comment-item"
+                        [class.selected]="isSelectedComment(comment.id)"
+                        (click)="focusComment(comment, $event)"
+                        (keydown.enter)="focusComment(comment, $event)"
+                        tabindex="0"
+                      >
+                        @if (!isReadOnlyComment(comment)) {
+                          <button
+                            class="ghost danger comment-item__delete"
+                            type="button"
+                            (click)="removeComment(comment.id); $event.stopPropagation()"
+                          >
+                            削除
+                          </button>
+                        }
+                        <span class="comment-item__title" [attr.title]="commentTitle(comment)">
+                          {{ commentTitle(comment) }}
+                        </span>
                       </div>
                     }
-                  </div>
-                  <label class="small-text">返信を追加</label>
-                  <textarea
-                    rows="2"
-                    [placeholder]="comment.messages.length ? '返信を記載' : 'コメントを追加'"
-                    [ngModel]="replyDraft(comment.id)"
-                    (ngModelChange)="setReplyDraft(comment.id, $event)"
-                  ></textarea>
-                  <div class="row">
-                    <span class="small-text">コメントを会話として残せます。</span>
-                    <button type="button" (click)="addReply(comment.id)" [disabled]="!hasReplyDraft(comment.id)">
-                      返信
-                    </button>
                   </div>
                 </div>
               }
@@ -345,26 +509,40 @@
           </div>
           <div class="panel-body">
             <div class="control">
-              <label>ページ</label>
-              <input
-                type="number"
-                min="1"
-                [max]="pdf.pageCount() || 1"
-                [ngModel]="selectedOcrPage()"
-                (ngModelChange)="selectedOcrPage.set($event)"
-              />
+              <label>対象</label>
+              <select [ngModel]="ocrScope()" (ngModelChange)="ocrScope.set($event)">
+                <option value="page">ページ</option>
+                <option value="all">全ページ</option>
+              </select>
+              @if (ocrScope() === 'page') {
+                <label>ページ</label>
+                <input
+                  type="number"
+                  min="1"
+                  [max]="pdf.pageCount() || 1"
+                  [ngModel]="selectedOcrPage()"
+                  (ngModelChange)="selectedOcrPage.set($event)"
+                />
+              }
               <button type="button" (click)="runOcr()" [disabled]="ocr.isRunning()">実行</button>
             </div>
             @if (ocr.isRunning()) {
               <div class="small-text">OCR 実行中...</div>
             }
-            @if (ocr.result()) {
+            @if (ocr.result(); as result) {
               <div class="card ocr-result">
                 <div class="row">
-                  <span class="tag">p{{ ocr.result()?.page }}</span>
-                  <span class="small-text">{{ ocr.result()?.durationMs }} ms</span>
+                  <span class="tag">{{ ocrResultTag(result) }}</span>
+                  <span class="small-text">{{ result.durationMs }} ms</span>
                 </div>
-                <pre>{{ ocr.result()?.text }}</pre>
+                <div class="control">
+                  <button type="button" class="ghost" (click)="copyOcrResult()">クリップボードへコピー</button>
+                  <button type="button" class="ghost" (click)="exportOcrResult()">テキストで保存</button>
+                </div>
+                @if (ocrActionMessage()) {
+                  <div class="small-text">{{ ocrActionMessage() }}</div>
+                }
+                <pre>{{ result.text }}</pre>
               </div>
             }
           </div>
@@ -375,11 +553,19 @@
         <section class="panel-block">
           <div class="panel-header">
             <h3>PDF ファイル比較</h3>
+            <button
+              type="button"
+              class="ghost danger"
+              (click)="clearCompareMode()"
+              [disabled]="compare.isRunning() || !compare.compareTargetSource()"
+            >
+              比較解除
+            </button>
           </div>
           <div class="panel-body">
             <label class="file-picker">
               <input type="file" accept="application/pdf" (change)="onCompareFileChange($event)" />
-              <span>比較用 PDF を選択</span>
+              <span>比較 PDF を選択</span>
             </label>
             @if (compare.compareTargetName()) {
               <div class="small-text">
@@ -392,7 +578,6 @@
             @if (compare.result()) {
               <div class="card">
                 <p>{{ compare.result()?.note }}</p>
-                <p>追加: {{ compare.result()?.addedPages }} / 削除: {{ compare.result()?.removedPages }}</p>
                 @if (compare.result()?.changedPages?.length) {
                   <div class="compare-pages-list">
                     <span class="small-text">変更ページ</span>

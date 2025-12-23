@@ -6,6 +6,7 @@ export type FeatureFlags = {
   comments: boolean;
   ocr: boolean;
   compare: boolean;
+  annotatedDownload: boolean;
 };
 
 export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
@@ -13,7 +14,8 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
   markers: true,
   comments: true,
   ocr: true,
-  compare: true
+  compare: true,
+  annotatedDownload: true
 };
 
 export const FEATURE_FLAGS = new InjectionToken<FeatureFlags>('FEATURE_FLAGS');
