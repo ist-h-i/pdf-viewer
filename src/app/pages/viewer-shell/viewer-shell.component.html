@@ -67,10 +67,16 @@
       }
 
       @if (isBrowser && hasPdf()) {
-        <div class="pages">
+        <div class="viewer-grid" [class.viewer-grid--compare]="flags.compare && compare.compareTargetSource()">
+          <div class="viewer-pane">
+            @if (flags.compare && compare.compareTargetSource()) {
+              <div class="viewer-pane__label">現在表示中</div>
+            }
+            <div class="pages">
           @for (page of pdf.renderedPages(); track trackPage($index, page)) {
             <div
               class="page"
+              [class.page--changed]="isChangedPage(page.pageNumber)"
               [attr.id]="pageAnchorId(page.pageNumber)"
               [attr.data-page]="page.pageNumber"
               [style.width.px]="page.width"
@@ -177,6 +183,46 @@
               }
 
               <div class="page-label">Page {{ page.pageNumber }}</div>
+            </div>
+          }
+            </div>
+          </div>
+          @if (flags.compare && compare.compareTargetSource()) {
+            <div class="viewer-pane viewer-pane--compare">
+              <div class="viewer-pane__label">比較対象</div>
+              @if (!compare.compareTargetPages().length) {
+                <div class="empty">
+                  <p>比較対象 PDF を読み込み中...</p>
+                </div>
+              }
+              <div class="pages compare-pages">
+                @for (page of compare.compareTargetPages(); track trackPage($index, page)) {
+                  <div
+                    class="page compare-page"
+                    [class.page--changed]="isChangedPage(page.pageNumber)"
+                    [attr.id]="comparePageAnchorId(page.pageNumber)"
+                    [attr.data-compare-page]="page.pageNumber"
+                    [style.width.px]="page.width"
+                    [style.height.px]="page.height"
+                    #comparePageWrapper
+                  >
+                    <pdf-viewer
+                      [src]="comparePdfSource()"
+                      [page]="page.pageNumber"
+                      [show-all]="false"
+                      [render-text]="true"
+                      [original-size]="false"
+                      [fit-to-page]="true"
+                      [autoresize]="true"
+                      [zoom]="pdf.zoom()"
+                      [style.width.px]="page.width"
+                      [style.height.px]="page.height"
+                      (page-rendered)="onComparePageRendered(page.pageNumber, $event)"
+                    ></pdf-viewer>
+                    <div class="page-label">Page {{ page.pageNumber }}</div>
+                  </div>
+                }
+              </div>
             </div>
           }
         </div>
@@ -347,7 +393,20 @@
               <div class="card">
                 <p>{{ compare.result()?.note }}</p>
                 <p>追加: {{ compare.result()?.addedPages }} / 削除: {{ compare.result()?.removedPages }}</p>
-                <p>変更ページ: {{ compare.result()?.changedPages?.join(', ') ?? 'なし' }}</p>
+                @if (compare.result()?.changedPages?.length) {
+                  <div class="compare-pages-list">
+                    <span class="small-text">変更ページ</span>
+                    <div class="page-chips">
+                      @for (page of compare.result()?.changedPages ?? []; track $index) {
+                        <button type="button" class="ghost small" (click)="jumpToComparePage(page)">
+                          p{{ page }}
+                        </button>
+                      }
+                    </div>
+                  </div>
+                } @else {
+                  <p class="small-text">変更ページ: なし</p>
+                }
               </div>
             }
           </div>

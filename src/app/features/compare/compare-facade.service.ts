@@ -1,7 +1,8 @@
 import { inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
-import { CompareSummary } from '../../core/models';
+import { CompareSummary, PdfPageRender } from '../../core/models';
+import { PDF_WORKER_SRC } from '../../core/pdf-worker';
 import { PdfFacadeService } from '../pdf/pdf-facade.service';
 
 @Injectable({ providedIn: 'root' })
@@ -13,10 +14,17 @@ export class CompareFacadeService {
   private readonly summary = signal<CompareSummary | null>(null);
   private readonly running = signal(false);
   private readonly targetName = signal<string | null>(null);
+  private readonly targetSource = signal<Uint8Array | null>(null);
+  private readonly targetPages = signal<PdfPageRender[]>([]);
+  private readonly targetPageCount = signal(0);
+  private targetDoc: PDFDocumentProxy | null = null;
 
   readonly result = this.summary.asReadonly();
   readonly isRunning = this.running.asReadonly();
   readonly compareTargetName = this.targetName.asReadonly();
+  readonly compareTargetSource = this.targetSource.asReadonly();
+  readonly compareTargetPages = this.targetPages.asReadonly();
+  readonly compareTargetPageCount = this.targetPageCount.asReadonly();
 
   constructor(private readonly pdfFacade: PdfFacadeService) {}
 
@@ -31,6 +39,7 @@ export class CompareFacadeService {
         changedPages: [],
         note: 'PDF 比較はブラウザ環境でのみ有効です'
       });
+      this.clearTarget();
       return;
     }
     const baseTexts = await this.pdfFacade.getAllText();
@@ -41,15 +50,18 @@ export class CompareFacadeService {
         changedPages: [],
         note: '比較元 PDF が読み込まれていません'
       });
+      this.clearTarget();
       return;
     }
     this.running.set(true);
     this.targetName.set(file.name);
     try {
       const pdfjs = await this.ensurePdfJs();
-      const targetDoc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const targetDoc = await pdfjs.getDocument({ data: bytes }).promise;
+      await this.setTargetDoc(targetDoc, bytes);
       const targetTexts = await this.collectAllText(targetDoc);
-      targetDoc.destroy();
       this.summary.set(this.diff(baseTexts, targetTexts));
     } catch (err) {
       const message = err instanceof Error ? err.message : '比較用 PDF の読み込みに失敗しました';
@@ -59,6 +71,7 @@ export class CompareFacadeService {
         changedPages: [],
         note: message
       });
+      this.clearTarget();
     } finally {
       this.running.set(false);
     }
@@ -68,6 +81,47 @@ export class CompareFacadeService {
     this.summary.set(null);
     this.targetName.set(null);
     this.running.set(false);
+    this.clearTarget();
+  }
+
+  async refreshTargetPages(): Promise<void> {
+    if (!this.targetDoc) {
+      return;
+    }
+    await this.renderTargetPages(this.targetDoc);
+  }
+
+  private async setTargetDoc(doc: PDFDocumentProxy, source: Uint8Array): Promise<void> {
+    if (this.targetDoc && this.targetDoc !== doc) {
+      this.targetDoc.destroy();
+    }
+    this.targetDoc = doc;
+    this.targetSource.set(source);
+    this.targetPageCount.set(doc.numPages);
+    await this.renderTargetPages(doc);
+  }
+
+  private clearTarget(): void {
+    this.targetDoc?.destroy();
+    this.targetDoc = null;
+    this.targetSource.set(null);
+    this.targetPages.set([]);
+    this.targetPageCount.set(0);
+  }
+
+  private async renderTargetPages(doc: PDFDocumentProxy): Promise<void> {
+    const scale = this.pdfFacade.getScale();
+    const rendered: PdfPageRender[] = [];
+    for (let i = 1; i <= doc.numPages; i += 1) {
+      const page = await doc.getPage(i);
+      const viewport = page.getViewport({ scale });
+      rendered.push({
+        pageNumber: i,
+        width: viewport.width,
+        height: viewport.height
+      });
+      this.targetPages.set([...rendered]);
+    }
   }
 
   private async collectAllText(doc: PDFDocumentProxy): Promise<string[]> {
@@ -107,10 +161,7 @@ export class CompareFacadeService {
       return this.pdfjsPromise;
     }
     this.pdfjsPromise = import('pdfjs-dist').then((pdfjs) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-        'pdfjs-dist/build/pdf.worker.min.mjs',
-        import.meta.url
-      ).toString();
+      pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
       return pdfjs;
     });
     return this.pdfjsPromise;

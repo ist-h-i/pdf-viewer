@@ -15,6 +15,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { GlobalWorkerOptions, version as pdfJsVersion } from 'pdfjs-dist';
 import { PdfViewerModule } from 'ng2-pdf-viewer';
+import { Subscription } from 'rxjs';
 import { FEATURE_FLAGS, FeatureFlags } from '../../core/feature-flags';
 import { PDF_WORKER_SRC } from '../../core/pdf-worker';
 import {
@@ -102,6 +103,7 @@ type DragState =
 })
 export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   @ViewChildren('pageWrapper') private pageWrappers!: QueryList<ElementRef<HTMLElement>>;
+  @ViewChildren('comparePageWrapper') private comparePageWrappers!: QueryList<ElementRef<HTMLElement>>;
 
   protected readonly searchQuery = signal('');
   protected readonly selectedOcrPage = signal(1);
@@ -128,14 +130,20 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   protected readonly zoomPercent = computed(() => Math.round(this.pdf.zoom() * 100));
 
   protected pdfSource(): Uint8Array | undefined {
-    console.log('pdfSource called', this.pdf.getCurrentFileSource() ?? undefined);
     return this.pdf.getCurrentFileSource() ?? undefined;
   }
 
+  protected comparePdfSource(): Uint8Array | undefined {
+    return this.compare.compareTargetSource() ?? undefined;
+  }
+
   private readonly pageElementMap = new Map<number, HTMLElement>();
+  private readonly comparePageElementMap = new Map<number, HTMLElement>();
   private readonly textLayerElementMap = new Map<number, HTMLElement>();
   private readonly renderedTextLayers = new Set<number>();
   private readonly textLayouts = new Map<number, PageTextLayout>();
+  private pageWrappersSubscription?: Subscription;
+  private comparePageWrappersSubscription?: Subscription;
   private dragState: DragState | null = null;
   protected readonly isBrowser: boolean;
 
@@ -166,15 +174,27 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
 
   async ngAfterViewInit(): Promise<void> {
     this.syncDomRefs();
-    this.pageWrappers.changes.subscribe(() => this.syncDomRefs());
+    this.syncCompareDomRefs();
+    this.pageWrappersSubscription?.unsubscribe();
+    this.pageWrappersSubscription = this.pageWrappers.changes.subscribe(() => this.syncDomRefs());
+    this.comparePageWrappersSubscription?.unsubscribe();
+    this.comparePageWrappersSubscription = this.comparePageWrappers.changes.subscribe(() =>
+      this.syncCompareDomRefs()
+    );
   }
 
   ngOnDestroy(): void {
+    this.pageWrappersSubscription?.unsubscribe();
+    this.comparePageWrappersSubscription?.unsubscribe();
     this.teardownDragListeners();
   }
 
   protected onPageRendered(_pageNumber: number, _event: CustomEvent): void {
     this.syncDomRefs();
+  }
+
+  protected onComparePageRendered(_pageNumber: number, _event: CustomEvent): void {
+    this.syncCompareDomRefs();
   }
 
   protected onTextLayerRendered(pageNumber: number, event: CustomEvent): void {
@@ -192,6 +212,19 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
 
   protected pageAnchorId(page: number): string {
     return `page-${page}`;
+  }
+
+  protected comparePageAnchorId(page: number): string {
+    return `compare-page-${page}`;
+  }
+
+  protected isChangedPage(pageNumber: number): boolean {
+    return this.compare.result()?.changedPages?.includes(pageNumber) ?? false;
+  }
+
+  protected jumpToComparePage(pageNumber: number): void {
+    this.scrollToPage(pageNumber);
+    this.scrollToComparePage(pageNumber);
   }
 
   protected markersFor(page: number): Marker[] {
@@ -227,6 +260,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected addReply(commentId: string): void {
+    if (!this.flags.comments) {
+      return;
+    }
     const text = this.replyDraft(commentId).trim();
     if (!text) {
       return;
@@ -248,6 +284,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected focusMarker(marker: Marker, event?: Event): void {
+    if (!this.flags.markers) {
+      return;
+    }
     if (this.shouldIgnoreSelection(event)) {
       return;
     }
@@ -257,6 +296,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected focusComment(comment: CommentCard, event?: Event): void {
+    if (!this.flags.comments) {
+      return;
+    }
     if (this.shouldIgnoreSelection(event)) {
       return;
     }
@@ -270,6 +312,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected startCommentDrag(comment: CommentCard, event: PointerEvent): void {
+    if (!this.flags.comments) {
+      return;
+    }
     if (event.button !== 0) {
       return;
     }
@@ -293,6 +338,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected startMarkerDrag(marker: Marker, event: PointerEvent): void {
+    if (!this.flags.markers) {
+      return;
+    }
     if (event.button !== 0 || marker.source !== 'selection') {
       return;
     }
@@ -336,6 +384,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected startCommentResize(comment: CommentCard, axis: CommentResizeAxis, event: PointerEvent): void {
+    if (!this.flags.comments) {
+      return;
+    }
     if (event.button !== 0) {
       return;
     }
@@ -359,6 +410,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected startPointerAdjust(comment: CommentCard, event: PointerEvent): void {
+    if (!this.flags.comments) {
+      return;
+    }
     if (event.button !== 0) {
       return;
     }
@@ -413,22 +467,35 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!file) {
       return;
     }
+    if (!this.flags.compare) {
+      input.value = '';
+      return;
+    }
     await this.compare.compareWith(file);
     input.value = '';
   }
 
   protected async performSearch(): Promise<void> {
+    if (!this.flags.search) {
+      return;
+    }
     await this.search.search(this.searchQuery());
     await this.applySearchHighlights(this.searchQuery());
   }
 
   protected clearSearch(): void {
+    if (!this.flags.search) {
+      return;
+    }
     this.searchQuery.set('');
     this.search.clear();
     this.annotations.setSearchHighlights([]);
   }
 
   protected toggleObjects(): void {
+    if (!this.flags.markers && !this.flags.comments) {
+      return;
+    }
     this.showObjects.update((value) => !value);
   }
 
@@ -537,14 +604,23 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected updateMarker(id: string, label: string, color: string): void {
+    if (!this.flags.markers) {
+      return;
+    }
     this.annotations.updateMarker(id, { label, color });
   }
 
   protected updateComment(id: string, text: string): void {
+    if (!this.flags.comments) {
+      return;
+    }
     this.annotations.updateComment(id, text);
   }
 
   protected removeMarker(id: string): void {
+    if (!this.flags.markers) {
+      return;
+    }
     if (this.selectedMarkerId() === id) {
       this.selectedMarkerId.set(null);
     }
@@ -552,6 +628,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected removeComment(id: string): void {
+    if (!this.flags.comments) {
+      return;
+    }
     if (this.selectedCommentId() === id) {
       this.selectedCommentId.set(null);
     }
@@ -559,6 +638,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected async runOcr(): Promise<void> {
+    if (!this.flags.ocr) {
+      return;
+    }
     await this.ocr.runOcr(this.selectedOcrPage());
   }
 
@@ -576,6 +658,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   private resetViewState(): void {
     this.renderedTextLayers.clear();
     this.pageElementMap.clear();
+    this.comparePageElementMap.clear();
     this.textLayerElementMap.clear();
     this.textLayouts.clear();
     this.dragState = null;
@@ -586,6 +669,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   private async applyZoomChange(action: () => Promise<void> | void): Promise<void> {
     this.resetViewState();
     await action();
+    await this.compare.refreshTargetPages();
   }
 
   private normalizeCoordinates(
@@ -707,6 +791,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
+  private scrollToComparePage(pageNumber: number): void {
+    const pageElement = this.comparePageElementMap.get(pageNumber);
+    if (!pageElement) {
+      return;
+    }
+    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   private shouldIgnoreSelection(event?: Event): boolean {
     const target = event?.target as HTMLElement | null;
     return Boolean(target?.closest('button, input, textarea, select, option'));
@@ -719,6 +811,17 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       const page = Number(el.dataset['page']);
       if (page) {
         this.pageElementMap.set(page, el);
+      }
+    });
+  }
+
+  private syncCompareDomRefs(): void {
+    this.comparePageElementMap.clear();
+    this.comparePageWrappers?.forEach((ref) => {
+      const el = ref.nativeElement;
+      const page = Number(el.dataset['comparePage']);
+      if (page) {
+        this.comparePageElementMap.set(page, el);
       }
     });
   }

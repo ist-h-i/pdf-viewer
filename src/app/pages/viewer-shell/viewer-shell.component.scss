@@ -165,6 +165,32 @@
   overflow-x: auto;
 }
 
+.viewer-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.viewer-grid--compare {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.viewer-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.viewer-pane__label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #93c5fd;
+  margin-bottom: 8px;
+}
+
 .viewer-controls {
   display: flex;
   align-items: center;
@@ -239,6 +265,17 @@ button.ghost.active {
   overflow: hidden;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
   margin: 0 auto;
+}
+
+.page--changed {
+  border-color: rgba(251, 191, 36, 0.7);
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.25), 0 10px 25px rgba(0, 0, 0, 0.35);
+}
+
+.page--changed .page-label {
+  border-color: rgba(251, 191, 36, 0.6);
+  color: #fef3c7;
+  background: rgba(180, 83, 9, 0.35);
 }
 
 .page img {
@@ -621,6 +658,12 @@ button.ghost {
   color: #cdd9e5;
 }
 
+button.ghost.small {
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 999px;
+}
+
 button.ghost.danger {
   color: #f87171;
   border-color: rgba(248, 113, 113, 0.4);
@@ -643,6 +686,18 @@ button.ghost.danger {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.compare-pages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.page-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .card {
@@ -773,6 +828,12 @@ a:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 1400px) {
+  .viewer-grid--compare {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 1100px) {
