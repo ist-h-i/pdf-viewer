@@ -26,7 +26,7 @@ PDFの注釈は PDF 内部のオブジェクト（`/Type /Annot`）で、代表�
 ### 現状スタックにおける制約
 - `ng2-pdf-viewer` は内部で `pdfjs-dist/web/pdf_viewer.mjs` の `PDFViewer` を使っていますが、viewer オプションで `annotationEditorMode: DISABLE` を設定しており、**注釈作成機能が使えない**状態です。
 - 現行のコメント/ハイライトは **PDFに書き込まれない**（=外部PDFビューアで見えない）カスタムオーバーレイ実装です。
-  - ハイライト: `.textLayer` の DOM を `span.text-highlight` でラップ（選択ハイライト）＋ `div.highlight` の絶対配置（検索ハイライト）
+  - ハイライト: `Marker`（`HighlightRect[]`）を `div.highlight` のオーバーレイで描画（選択/検索で方式統一）
   - コメント: `CommentCard` を基にしたアンカー/吹き出しの重畳表示
 
 ## 2. 実装方法（候補）
@@ -57,7 +57,7 @@ PDFの注釈は PDF 内部のオブジェクト（`/Type /Annot`）で、代表�
 目的: UI/UXは現状のまま、**出力PDFだけ注釈を持つ**ようにする（導入コストを下げる）。
 
 やること（概要）:
-1. 現行の `Marker` / `TextHighlightRange` / `CommentCard` を「PDF注釈」に変換する
+1. 現行の `Marker` / `CommentCard` を「PDF注釈」に変換する
    - ハイライト: 既存の矩形（`HighlightRect`）を、ページViewport経由で PDF座標へ変換し、`/Subtype /Highlight`（`QuadPoints`）を生成
    - コメント: `CommentCard.anchorX/Y` を PDF座標へ変換し、`/Subtype /Text`（付箋）または `/Subtype /FreeText` を生成
 2. 生成した注釈を PDF に追加して新しい bytes を作成し、`downloadCurrentPdf()` の出力に使う
@@ -83,7 +83,7 @@ PDFの注釈は PDF 内部のオブジェクト（`/Type /Annot`）で、代表�
 | --- | --- | --- |
 | データの実体 | アプリ内 state（`AnnotationFacadeService` 等） | PDF内オブジェクト（`/Annot`）＋必要ならアプリ側メタ |
 | 座標系 | ページDOM基準の正規化（0..1 や 0..100%） | PDFユーザ空間（pt、原点は基本左下） |
-| ハイライト | `.textLayer` DOMを `span` で分割/ラップ（選択）＋ `div` 重畳（検索） | `/Highlight`（`QuadPoints`）として保持し、ビューアは注釈レイヤで描画 |
+| ハイライト | `Marker`（rects）を `div.highlight` で重畳（選択/検索共通） | `/Highlight`（`QuadPoints`）として保持し、ビューアは注釈レイヤで描画 |
 | コメント | アンカー＋吹き出し＋スレッド（独自UI） | `/Text`（付箋）or `/FreeText` 等。スレッドはPDFの返信構造へ落とす設計が必要 |
 | 永続化/共有 | リロードで消える（永続化・エクスポートは要件外） | PDFに保存すれば他ビューアでも可視（互換性の範囲あり） |
 | ダウンロード | `originalFileBytes` をそのまま保存 | `saveDocument()` または編集後bytesを保存 |
@@ -109,7 +109,7 @@ PDFの注釈は PDF 内部のオブジェクト（`/Type /Annot`）で、代表�
 
 ### Step 2（中期）: Viewer構成の整理（必要なら）
 - Annotation Editor を採用するなら、ページごとの `<pdf-viewer>` 複数生成を見直し、1ドキュメントに集約する（※現行は `<pdf-viewer [show-all]=true>` の単一インスタンス構成に整理済み）
-- 併せて「現行のDOMラップ式ハイライト」の依存度を下げる（PDF.jsアップデート耐性/性能）
+- ハイライトは Marker 方式に統一済み（DOM ラップ依存は解消済み）
 
 ### Step 3（将来）: PDF注釈の読み込み・UI統合
 - `page.getAnnotations()` で既存注釈を読み込み、アプリの表示（独自UI or PDF.js注釈UI）へ統合
@@ -119,4 +119,5 @@ PDFの注釈は PDF 内部のオブジェクト（`/Type /Annot`）で、代表�
 - 方針: **方針B（PDF編集ライブラリ併用）** を採用
 - Step 1: 実装済み。`pdf-lib` で注釈辞書を組み立て、`downloadCurrentPdf()` の出力に反映（`src/app/features/pdf/pdf-facade.service.ts` / `src/app/pages/viewer-shell/viewer-shell.component.ts`）。
 - Step 2: Annotation Editor は未対応（`ng2-pdf-viewer` 側の `annotationEditorMode` は無効のまま）。ただし Viewer は単一インスタンス構成に整理済み（`src/app/pages/viewer-shell/viewer-shell.component.html`）。
+- 付随対応: 選択ハイライトも `Marker`（rects）方式に統一済み（DOM ラップ方式は廃止）。
 - Step 3: 実装済み。`readPdfAnnotations()` でPDF注釈を読み込み、`AnnotationFacadeService` に統合して read-only 表示（`src/app/features/pdf/pdf-facade.service.ts` / `src/app/features/annotations/annotation-facade.service.ts` / `src/app/pages/viewer-shell/viewer-shell.component.ts`）。

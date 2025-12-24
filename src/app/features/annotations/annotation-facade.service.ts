@@ -37,7 +37,7 @@ export class AnnotationFacadeService {
     page: number,
     rects: Marker['rects'],
     label = '新規ハイライト',
-    color = '#ffc0cb',
+    color = 'var(--color-highlight-default)',
     source: Marker['source'] = 'selection',
     text?: string
   ): Marker {

@@ -41,10 +41,22 @@ type ContextMenuState = {
   x: number;
   y: number;
   pageNumber: number | null;
+  selectionPageNumber: number | null;
+  selectionRects: PageSelectionRects[];
   canHighlight: boolean;
   selectionText: string;
   clickOffset: { x: number; y: number } | null;
   selectionOffsets: { start: number; end: number } | null;
+};
+
+type PageSelectionRects = {
+  pageNumber: number;
+  rects: HighlightRect[];
+};
+
+type SelectionContext = {
+  selection: Selection;
+  pageNumber: number;
 };
 
 type OffsetRange = {
@@ -110,11 +122,11 @@ type HighlightSwatch = {
 };
 
 const HIGHLIGHT_SWATCHES: HighlightSwatch[] = [
-  { id: 'pink', label: 'ピンク', color: 'rgba(255, 192, 203, 0.45)' },
-  { id: 'yellow', label: 'イエロー', color: 'rgba(254, 240, 138, 0.45)' },
-  { id: 'green', label: 'グリーン', color: 'rgba(134, 239, 172, 0.45)' },
-  { id: 'blue', label: 'ブルー', color: 'rgba(147, 197, 253, 0.45)' },
-  { id: 'orange', label: 'オレンジ', color: 'rgba(253, 186, 116, 0.45)' }
+  { id: 'pink', label: 'ピンク', color: 'var(--color-highlight-pink)' },
+  { id: 'yellow', label: 'イエロー', color: 'var(--color-highlight-yellow)' },
+  { id: 'green', label: 'グリーン', color: 'var(--color-highlight-green)' },
+  { id: 'blue', label: 'ブルー', color: 'var(--color-highlight-blue)' },
+  { id: 'orange', label: 'オレンジ', color: 'var(--color-highlight-orange)' }
 ];
 
 type DragState =
@@ -172,6 +184,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     x: 0,
     y: 0,
     pageNumber: null,
+    selectionPageNumber: null,
+    selectionRects: [],
     canHighlight: false,
     selectionText: '',
     clickOffset: null,
@@ -451,21 +465,21 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return text || label || 'ハイライト';
   }
 
+  protected highlightStrongColor(color: string): string {
+    const rgba = this.parseColorToRgba(color);
+    if (!rgba) {
+      return color;
+    }
+    const alpha = this.clamp(Math.max(rgba.a, 0.85), 0, 1);
+    return `rgba(${rgba.r}, ${rgba.g}, ${rgba.b}, ${alpha.toFixed(2)})`;
+  }
+
   private isEditableMarkerId(id: string): boolean {
     return this.annotations.exportMarkers().some((marker) => marker.id === id);
   }
 
   private isEditableCommentId(id: string): boolean {
     return this.annotations.exportComments().some((comment) => comment.id === id);
-  }
-
-  protected focusHighlight(page: number, event?: Event): void {
-    if (this.shouldIgnoreSelection(event)) {
-      return;
-    }
-    this.selectedCommentId.set(null);
-    this.selectedMarkerId.set(null);
-    this.scrollToPage(page);
   }
 
   protected removeHighlight(highlightId: string): void {
@@ -607,17 +621,20 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!this.flags.markers) {
       return;
     }
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
     if (this.isReadOnlyMarker(marker)) {
       return;
     }
-    if (event.button !== 0 || marker.source !== 'selection') {
+    if (marker.source !== 'selection') {
       return;
     }
     const pageElement = this.pageElementMap.get(marker.page);
     if (!pageElement) {
       return;
     }
-    event.preventDefault();
     event.stopPropagation();
     const pointer = this.normalizeCoordinates(event, pageElement);
     this.dragState = {
@@ -872,18 +889,33 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!pageNumber) {
       return;
     }
-    const pageElement = this.pageElementMap.get(pageNumber);
-    const selection = this.getValidSelection(pageNumber);
+    const pageElement =
+      ((event.target as HTMLElement | null)?.closest('.page') as HTMLElement | null) ??
+      this.pageElementMap.get(pageNumber);
     const clickOffset = pageElement ? this.normalizeCoordinates(event, pageElement) : null;
-    const canHighlight = this.flags.markers && Boolean(selection);
+    const selection = window.getSelection();
+    const selectionRects =
+      this.flags.markers && selection ? this.collectSelectionRectsByPage(selection) : [];
+    const selectionContext =
+      this.flags.markers && selectionRects.length === 0 ? this.resolveSelectionContext(pageNumber) : null;
+    const canHighlight =
+      this.flags.markers && (selectionRects.length > 0 || Boolean(selectionContext));
+    const selectionPageNumber =
+      selectionRects.length === 1
+        ? selectionRects[0].pageNumber
+        : selectionContext?.pageNumber ?? null;
     const selectionText = canHighlight ? selection?.toString() ?? '' : '';
     const selectionOffsets =
-      canHighlight && selection ? this.getSelectionOffsets(pageNumber, selection) : null;
+      selectionContext && selectionContext.pageNumber === selectionPageNumber
+        ? this.getSelectionOffsets(selectionContext.pageNumber, selectionContext.selection)
+        : null;
     this.contextMenu.set({
       visible: true,
       x: event.clientX,
       y: event.clientY,
       pageNumber,
+      selectionPageNumber,
+      selectionRects,
       canHighlight,
       selectionText,
       clickOffset,
@@ -897,21 +929,60 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       return;
     }
     const state = this.contextMenu();
-    if (!state.pageNumber) {
+    const color = this.selectedHighlightColor();
+    const highlightText = state.selectionText?.trim() || undefined;
+    const selectionRects = state.selectionRects.filter((section) => section.rects.length > 0);
+    if (selectionRects.length > 0) {
+      selectionRects.forEach((section) => {
+        this.annotations.addMarker(section.pageNumber, section.rects, '', color, 'selection', highlightText);
+      });
+      window.getSelection()?.removeAllRanges();
+      this.closeContextMenu();
       return;
     }
-    const selection = this.getValidSelection(state.pageNumber);
-    const pageElement = this.pageElementMap.get(state.pageNumber);
-    const layer = this.textLayerElementMap.get(state.pageNumber);
+    const selectionPageNumber = state.selectionPageNumber;
+    if (!selectionPageNumber) {
+      return;
+    }
+    const selectionContext = this.resolveSelectionContext(selectionPageNumber);
+    const selection =
+      selectionContext && selectionContext.pageNumber === selectionPageNumber
+        ? selectionContext.selection
+        : null;
+    const anchorElement =
+      selection?.anchorNode?.nodeType === Node.ELEMENT_NODE
+        ? (selection.anchorNode as Element)
+        : selection?.anchorNode?.parentElement ?? null;
+    let layer = this.textLayerElementMap.get(selectionPageNumber) ?? null;
+    if (!layer && selection) {
+      const resolved = this.resolveTextLayerFromSelection(selection);
+      if (resolved && resolved.pageNumber === selectionPageNumber) {
+        layer = resolved.layer;
+      }
+    }
+    const pageElement =
+      this.pageElementMap.get(selectionPageNumber) ??
+      (anchorElement?.closest('.page') as HTMLElement | null) ??
+      (layer?.closest('.page') as HTMLElement | null);
+    if (!layer && pageElement) {
+      layer = pageElement.querySelector('.textLayer') as HTMLElement | null;
+      if (layer) {
+        this.textLayerElementMap.set(selectionPageNumber, layer);
+        const layout = this.captureTextLayoutFromDom(selectionPageNumber, layer);
+        if (layout) {
+          this.textLayouts.set(selectionPageNumber, layout);
+          this.renderedTextLayers.add(selectionPageNumber);
+        }
+      }
+    }
     if (!pageElement) {
       this.closeContextMenu();
       return;
     }
-    const color = this.selectedHighlightColor();
-    const highlightText = state.selectionText?.trim() ?? (selection ? selection.toString().trim() : '');
+    const highlightTextFallback = state.selectionText?.trim() ?? (selection ? selection.toString().trim() : '');
     const offsets =
       state.selectionOffsets ??
-      (selection ? this.getSelectionOffsets(state.pageNumber, selection) : null);
+      (selection ? this.getSelectionOffsets(selectionPageNumber, selection) : null);
     let range: Range | null = null;
     if (offsets && layer) {
       range = this.createRangeFromOffsets(layer, offsets.start, offsets.end);
@@ -928,12 +999,12 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       return;
     }
     this.annotations.addMarker(
-      state.pageNumber,
+      selectionPageNumber,
       rects,
       '',
       color,
       'selection',
-      highlightText || undefined
+      highlightTextFallback || undefined
     );
     selection?.removeAllRanges();
     this.closeContextMenu();
@@ -997,6 +1068,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       x: 0,
       y: 0,
       pageNumber: null,
+      selectionPageNumber: null,
+      selectionRects: [],
       canHighlight: false,
       selectionText: '',
       clickOffset: null,
@@ -1503,33 +1576,108 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return (pageElement?.querySelector('.textLayer') as HTMLElement | null) ?? null;
   }
 
-  private resolveTextLayerFromSelection(
-    pageNumber: number,
-    selection: Selection
-  ): HTMLElement | undefined {
-    const pageElement = this.pageElementMap.get(pageNumber);
-    const range = selection.rangeCount ? selection.getRangeAt(0) : null;
-    const rangeContainer =
-      range?.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
-        ? (range.commonAncestorContainer as Element)
-        : range?.commonAncestorContainer.parentElement ?? null;
-    const anchorElement =
-      selection.anchorNode?.nodeType === Node.ELEMENT_NODE
-        ? (selection.anchorNode as Element)
-        : selection.anchorNode?.parentElement ?? null;
-    const focusElement =
-      selection.focusNode?.nodeType === Node.ELEMENT_NODE
-        ? (selection.focusNode as Element)
-        : selection.focusNode?.parentElement ?? null;
-    const layer =
-      (rangeContainer?.closest('.textLayer') as HTMLElement | null) ??
-      (anchorElement?.closest('.textLayer') as HTMLElement | null) ??
-      (focusElement?.closest('.textLayer') as HTMLElement | null);
-    if (!layer) {
-      return undefined;
+  private resolveSelectionElement(node: Node | null | undefined): Element | null {
+    if (!node) {
+      return null;
     }
-    if (pageElement && !pageElement.contains(layer)) {
-      return undefined;
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      return node as Element;
+    }
+    return node.parentElement ?? null;
+  }
+
+  private resolveCssVar(value: string): string {
+    const match = value.trim().match(/^var\((--[^),]+)(?:,[^)]+)?\)$/);
+    if (!match || !this.isBrowser || typeof document === 'undefined') {
+      return value;
+    }
+    const resolved = getComputedStyle(document.documentElement).getPropertyValue(match[1]);
+    return resolved.trim() || value;
+  }
+
+  private parseColorToRgba(
+    value: string
+  ): { r: number; g: number; b: number; a: number } | null {
+    const trimmed = this.resolveCssVar(value).trim();
+    const rgbMatch = trimmed.match(/^rgba?\((.+)\)$/i);
+    if (rgbMatch) {
+      const parts = rgbMatch[1].split(',').map((part) => part.trim());
+      if (parts.length < 3) {
+        return null;
+      }
+      const r = this.parseColorChannel(parts[0]);
+      const g = this.parseColorChannel(parts[1]);
+      const b = this.parseColorChannel(parts[2]);
+      if (r === null || g === null || b === null) {
+        return null;
+      }
+      const alphaRaw = parts[3];
+      const alpha = alphaRaw === undefined ? 1 : Number.parseFloat(alphaRaw);
+      if (!Number.isFinite(alpha)) {
+        return null;
+      }
+      return { r, g, b, a: this.clamp(alpha, 0, 1) };
+    }
+
+    const hexMatch = trimmed.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+    if (!hexMatch) {
+      return null;
+    }
+    const hex = hexMatch[1];
+    if (hex.length === 3 || hex.length === 4) {
+      const r = Number.parseInt(hex[0] + hex[0], 16);
+      const g = Number.parseInt(hex[1] + hex[1], 16);
+      const b = Number.parseInt(hex[2] + hex[2], 16);
+      const a = hex.length === 4 ? Number.parseInt(hex[3] + hex[3], 16) / 255 : 1;
+      return { r, g, b, a };
+    }
+    const r = Number.parseInt(hex.slice(0, 2), 16);
+    const g = Number.parseInt(hex.slice(2, 4), 16);
+    const b = Number.parseInt(hex.slice(4, 6), 16);
+    const a = hex.length === 8 ? Number.parseInt(hex.slice(6, 8), 16) / 255 : 1;
+    return { r, g, b, a };
+  }
+
+  private parseColorChannel(value: string): number | null {
+    if (value.endsWith('%')) {
+      const percentage = Number.parseFloat(value.slice(0, -1));
+      if (!Number.isFinite(percentage)) {
+        return null;
+      }
+      return Math.round(this.clamp(percentage, 0, 100) * 2.55);
+    }
+    const numeric = Number.parseFloat(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    return Math.round(this.clamp(numeric, 0, 255));
+  }
+
+  private resolveTextLayerFromSelection(
+    selection: Selection
+  ): { layer: HTMLElement; pageNumber: number } | null {
+    const range = selection.rangeCount ? selection.getRangeAt(0) : null;
+    const rangeElement = this.resolveSelectionElement(range?.commonAncestorContainer);
+    const anchorElement = this.resolveSelectionElement(selection.anchorNode);
+    const focusElement = this.resolveSelectionElement(selection.focusNode);
+    const layerCandidates = [
+      rangeElement?.closest('.textLayer') as HTMLElement | null,
+      anchorElement?.closest('.textLayer') as HTMLElement | null,
+      focusElement?.closest('.textLayer') as HTMLElement | null
+    ].filter((candidate): candidate is HTMLElement => Boolean(candidate));
+    const layer = layerCandidates[0];
+    if (!layer) {
+      return null;
+    }
+    if (layerCandidates.some((candidate) => candidate !== layer)) {
+      return null;
+    }
+    if (!this.selectionMatchesLayer(selection, layer)) {
+      return null;
+    }
+    const pageNumber = this.resolvePageNumberFromLayer(layer);
+    if (!pageNumber) {
+      return null;
     }
     this.textLayerElementMap.set(pageNumber, layer);
     const layout = this.captureTextLayoutFromDom(pageNumber, layer);
@@ -1537,7 +1685,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       this.textLayouts.set(pageNumber, layout);
       this.renderedTextLayers.add(pageNumber);
     }
-    return layer;
+    return { layer, pageNumber };
   }
 
   private rebuildTextLayoutsFromDom(force = false): void {
@@ -1553,27 +1701,137 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  private getValidSelection(pageNumber: number): Selection | null {
+  private collectSelectionRectsByPage(selection: Selection): PageSelectionRects[] {
+    if (!this.isBrowser || typeof document === 'undefined') {
+      return [];
+    }
+    if (selection.isCollapsed || selection.rangeCount === 0) {
+      return [];
+    }
+    const range = selection.getRangeAt(0);
+    if (range.collapsed) {
+      return [];
+    }
+    const clientRects = Array.from(range.getClientRects()).filter(
+      (rect) => rect.width > 0 && rect.height > 0
+    );
+    if (clientRects.length === 0) {
+      return [];
+    }
+
+    const pages: Array<{ pageNumber: number; rect: DOMRect }> = [];
+    if (this.pageElementMap.size > 0) {
+      for (const [pageNumber, pageElement] of this.pageElementMap.entries()) {
+        const rect = pageElement.getBoundingClientRect();
+        if (!rect.width || !rect.height) {
+          continue;
+        }
+        pages.push({ pageNumber, rect });
+      }
+    } else {
+      this.collectPdfPageElements(this.pdfViewerHost?.nativeElement).forEach((pageElement) => {
+        const pageNumber = this.readPageNumber(pageElement);
+        if (!pageNumber) {
+          return;
+        }
+        const rect = pageElement.getBoundingClientRect();
+        if (!rect.width || !rect.height) {
+          return;
+        }
+        pages.push({ pageNumber, rect });
+      });
+    }
+
+    if (pages.length === 0) {
+      return [];
+    }
+
+    const grouped = new Map<number, HighlightRect[]>();
+    clientRects.forEach((clientRect) => {
+      const centerX = clientRect.left + clientRect.width / 2;
+      const centerY = clientRect.top + clientRect.height / 2;
+      const page = pages.find(
+        (candidate) =>
+          centerX >= candidate.rect.left &&
+          centerX <= candidate.rect.right &&
+          centerY >= candidate.rect.top &&
+          centerY <= candidate.rect.bottom
+      );
+      if (!page) {
+        return;
+      }
+      const rect = this.normalizeRect(clientRect, page.rect);
+      if (rect.width <= 0 || rect.height <= 0) {
+        return;
+      }
+      const list = grouped.get(page.pageNumber);
+      if (list) {
+        list.push(rect);
+      } else {
+        grouped.set(page.pageNumber, [rect]);
+      }
+    });
+
+    return Array.from(grouped.entries())
+      .map(([pageNumber, rects]) => ({ pageNumber, rects }))
+      .sort((a, b) => a.pageNumber - b.pageNumber);
+  }
+
+  private resolveSelectionContext(pageNumber?: number): SelectionContext | null {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
       return null;
     }
-    let layer = this.textLayerElementMap.get(pageNumber);
-    if (!layer) {
-      layer = this.resolveTextLayerFromSelection(pageNumber, selection);
+    const resolved = this.resolveTextLayerFromSelection(selection);
+    if (!resolved) {
+      if (!pageNumber) {
+        return null;
+      }
+      let layer = this.textLayerElementMap.get(pageNumber) ?? null;
+      if (!layer) {
+        const pageElement = this.pageElementMap.get(pageNumber);
+        layer = (pageElement?.querySelector('.textLayer') as HTMLElement | null) ?? null;
+      }
+      if (!layer || !this.selectionMatchesLayer(selection, layer)) {
+        return null;
+      }
+      this.textLayerElementMap.set(pageNumber, layer);
+      const layout = this.captureTextLayoutFromDom(pageNumber, layer);
+      if (layout) {
+        this.textLayouts.set(pageNumber, layout);
+        this.renderedTextLayers.add(pageNumber);
+      }
+      return { selection, pageNumber };
     }
-    if (!layer) {
-      return null;
+    return { selection, pageNumber: resolved.pageNumber };
+  }
+
+  private resolvePageNumberFromLayer(layer: HTMLElement): number | null {
+    const pageElement =
+      (layer.closest('[data-page-number], [data-page]') as HTMLElement | null) ??
+      (layer.closest('.page') as HTMLElement | null);
+    if (pageElement) {
+      const pageNumber = this.readPageNumber(pageElement);
+      if (pageNumber) {
+        return pageNumber;
+      }
     }
-    const range = selection.getRangeAt(0);
-    if (
-      !layer.contains(selection.anchorNode) ||
-      !layer.contains(selection.focusNode) ||
-      !layer.contains(range.commonAncestorContainer)
-    ) {
-      return null;
+    for (const [pageNumber, pageElement] of this.pageElementMap.entries()) {
+      if (pageElement.contains(layer)) {
+        return pageNumber;
+      }
     }
-    return selection;
+    return null;
+  }
+
+  private selectionMatchesLayer(selection: Selection, layer: HTMLElement): boolean {
+    const range = selection.rangeCount ? selection.getRangeAt(0) : null;
+    const startNode = range?.startContainer ?? selection.anchorNode;
+    const endNode = range?.endContainer ?? selection.focusNode;
+    if (!startNode || !endNode) {
+      return false;
+    }
+    return layer.contains(startNode) && layer.contains(endNode);
   }
 
   private getSelectionOffsets(
@@ -2117,7 +2375,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
         id: crypto.randomUUID ? crypto.randomUUID() : `search-${pageNumber}-${Date.now()}`,
         page: pageNumber,
         label: `検索: ${trimmed}`,
-        color: '#ffeb3b',
+        color: 'var(--color-highlight-search)',
         rects,
         source: 'search',
         text: trimmed

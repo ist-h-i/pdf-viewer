@@ -677,7 +677,7 @@ export class PdfFacadeService {
       1
     );
     if (values.length < 3 || values.slice(0, 3).some((value) => !Number.isFinite(value))) {
-      return `rgba(255, 235, 59, ${alpha})`;
+      return this.applyHighlightAlpha('var(--color-highlight-search)', alpha);
     }
     const max = Math.max(values[0], values[1], values[2]);
     const scale = max <= 1 ? 255 : 1;
@@ -806,10 +806,27 @@ export class PdfFacadeService {
     return { rgb, alpha };
   }
 
+  private applyHighlightAlpha(color: string, alpha: number): string {
+    const parsed = this.parseCssColor(color);
+    if (!parsed) {
+      return color;
+    }
+    return `rgba(${parsed.r}, ${parsed.g}, ${parsed.b}, ${alpha})`;
+  }
+
+  private resolveCssVar(color: string): string {
+    const match = color.trim().match(/^var\((--[^),]+)(?:,[^)]+)?\)$/);
+    if (!match || !this.isBrowser || typeof document === 'undefined') {
+      return color;
+    }
+    const resolved = getComputedStyle(document.documentElement).getPropertyValue(match[1]);
+    return resolved.trim() || color;
+  }
+
   private parseCssColor(
     color: string
   ): { r: number; g: number; b: number; a?: number } | null {
-    const trimmed = color.trim();
+    const trimmed = this.resolveCssVar(color).trim();
     if (!trimmed) {
       return null;
     }

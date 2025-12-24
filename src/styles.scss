@@ -1,4 +1,8 @@
+@use './styles/colors' as colors;
+
 @import 'pdfjs-dist/web/pdf_viewer.css';
+
+@include colors.define-color-vars();
 
 /* Base global styles */
 
@@ -9,7 +13,7 @@
 }
 
 :root {
-  background-color: #0d1117;
+  background-color: var(--color-ink-950);
 }
 
 html,
@@ -18,10 +22,10 @@ body {
   width: 100%;
   min-height: 100%;
   overflow: hidden;
-  background-color: #0d1117;
+  background-color: var(--color-ink-950);
 }
 
 body {
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  color: #e6edf3;
+  color: var(--color-steel-100);
 }

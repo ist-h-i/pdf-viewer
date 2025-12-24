@@ -1,0 +1,227 @@
+@mixin define-color-vars() {
+  :root {
+    // transparent fill for ghost controls, highlight borders, and gradient fade
+    --color-transparent: transparent;
+
+    // app background (root/body/host)
+    --color-ink-950: #0d1117;
+    // main surface background (viewer/panels/message bubbles) and highlight label text
+    --color-ink-900: #0b1220;
+    // selected card gradient start
+    --color-ink-800: #111a2b;
+    // surface background for controls/panels (top bar, inputs, cards, menus)
+    --color-slate-900: #0f172a;
+    // top bar gradient mid tone
+    --color-slate-850: #1d2435;
+    // tag background
+    --color-slate-800: #1e293b;
+    // empty-state text in comment bubble
+    --color-slate-400: #94a3b8;
+    // comment bubble text (headers/body/inputs)
+    --color-slate-200: #e2e8f0;
+    // selected highlight swatch border
+    --color-slate-50: #f8fafc;
+    // pdf page surface and scale indicator background
+    --color-gray-900: #111827;
+    // default border for panels/inputs/buttons/viewer
+    --color-gray-800: #1f2937;
+    // muted text (hints, section headers, timestamps)
+    --color-steel-300: #9fb1c5;
+    // secondary text (ghost buttons, tags, code)
+    --color-steel-200: #cdd9e5;
+    // primary text color across UI
+    --color-steel-100: #e6edf3;
+
+    // badge background
+    --color-blue-900: #1e3a8a;
+    // primary button gradient start and selected card border
+    --color-blue-600: #2563eb;
+    // focus outline for selectable items (cards/comments)
+    --color-blue-500: #3b82f6;
+    // accent text (pane labels/links) and swatch focus outline
+    --color-blue-300: #93c5fd;
+    // active ghost button text and comment count text
+    --color-blue-200: #bfdbfe;
+    // comment accent (default)
+    --color-sky-400: #38bdf8;
+    // comment metadata text
+    --color-sky-300: #7dd3fc;
+    // comment anchor highlight center
+    --color-sky-100: #e0f2fe;
+    // comment accent strong (default)
+    --color-teal-500: #14b8a6;
+    // primary button gradient end
+    --color-violet-600: #7c3aed;
+
+    // comment accent strong (selected)
+    --color-amber-500: #f59e0b;
+    // loading indicator dot and comment accent (selected)
+    --color-amber-400: #fbbf24;
+    // loading status text
+    --color-amber-200: #fde68a;
+    // changed page label text
+    --color-amber-100: #fef3c7;
+    // highlight item focus outline
+    --color-yellow-400: #facc15;
+    // highlight count text
+    --color-yellow-200: #fef08a;
+    // danger button text
+    --color-red-400: #f87171;
+    // error status text
+    --color-red-200: #fed7d7;
+    // primary button/badge text
+    --color-white: #fff;
+    // default highlight color for new markers
+    --color-highlight-default: #ffc0cb;
+    // search highlight color
+    --color-highlight-search: #ffeb3b;
+    // highlight swatch option (pink)
+    --color-highlight-pink: rgba(255, 192, 203, 0.45);
+    // highlight swatch option (yellow)
+    --color-highlight-yellow: rgba(254, 240, 138, 0.45);
+    // highlight swatch option (green)
+    --color-highlight-green: rgba(134, 239, 172, 0.45);
+    // highlight swatch option (blue)
+    --color-highlight-blue: rgba(147, 197, 253, 0.45);
+    // highlight swatch option (orange)
+    --color-highlight-orange: rgba(253, 186, 116, 0.45);
+
+    // soft shadow for pages/highlights/overlays
+    --color-black-a35: rgba(0, 0, 0, 0.35);
+    // shadow for bubble handles and selected labels
+    --color-black-a40: rgba(0, 0, 0, 0.4);
+    // shadow for comment anchor and context menu
+    --color-black-a45: rgba(0, 0, 0, 0.45);
+    // deep shadow for top bar and comment bubble
+    --color-black-a50: rgba(0, 0, 0, 0.5);
+    // deep shadow for selected comment bubble
+    --color-black-a55: rgba(0, 0, 0, 0.55);
+    // subtle top bar border
+    --color-white-a05: rgba(255, 255, 255, 0.05);
+    // unused (no references yet)
+    --color-white-a35: rgba(255, 255, 255, 0.35);
+    // unused (no references yet)
+    --color-white-a40: rgba(255, 255, 255, 0.4);
+    // selected highlight label ring
+    --color-white-a50: rgba(255, 255, 255, 0.5);
+    // highlight selection ring
+    --color-white-a60: rgba(255, 255, 255, 0.6);
+    // highlight selection border fallback
+    --color-white-a75: rgba(255, 255, 255, 0.75);
+    // highlight swatch selected ring
+    --color-slate-50-a45: rgba(248, 250, 252, 0.45);
+
+    // top bar panel shadow tint
+    --color-ink-deep-a50: rgba(6, 11, 24, 0.5);
+    // top bar panel background
+    --color-ink-deep-a60: rgba(5, 10, 20, 0.6);
+    // comment bubble background
+    --color-ink-deep-a92: rgba(6, 20, 32, 0.92);
+
+    // comment actions panel background
+    --color-slate-900-a45: rgba(15, 23, 42, 0.45);
+    // comment edit button background
+    --color-slate-900-a50: rgba(15, 23, 42, 0.5);
+    // comment/highlight list item and input background
+    --color-slate-900-a60: rgba(15, 23, 42, 0.6);
+    // comment textarea background, bubble handle border, viewer controls shadow
+    --color-slate-900-a70: rgba(15, 23, 42, 0.7);
+    // status pill inset shadow
+    --color-slate-900-a80: rgba(15, 23, 42, 0.8);
+    // panel/label gradients for selected items
+    --color-slate-900-a85: rgba(15, 23, 42, 0.85);
+    // comment anchor border
+    --color-slate-900-a90: rgba(15, 23, 42, 0.9);
+    // status pill background
+    --color-gray-900-a80: rgba(17, 24, 39, 0.8);
+    // selected comment item gradient start
+    --color-ink-800-a95: rgba(17, 26, 43, 0.95);
+    // selected highlight item gradient start
+    --color-warm-900-a90: rgba(24, 22, 16, 0.9);
+    // viewer controls gradient start
+    --color-slate-800-a95: rgba(30, 41, 59, 0.95);
+
+    // comment count pill background
+    --color-blue-800-a35: rgba(30, 64, 175, 0.35);
+    // active ghost button background
+    --color-blue-600-a16: rgba(37, 99, 235, 0.16);
+    // selected comment item outline glow
+    --color-blue-600-a35: rgba(37, 99, 235, 0.35);
+    // selected card outline glow
+    --color-blue-600-a40: rgba(37, 99, 235, 0.4);
+    // active ghost button border
+    --color-blue-600-a50: rgba(37, 99, 235, 0.5);
+    // selected comment item border
+    --color-blue-600-a60: rgba(37, 99, 235, 0.6);
+    // text selection highlight and comment count border
+    --color-blue-500-a35: rgba(59, 130, 246, 0.35);
+    // top bar accent glow
+    --color-indigo-600-a35: rgba(79, 70, 229, 0.35);
+    // comment glow shadow
+    --color-sky-400-a18: rgba(56, 189, 248, 0.18);
+    // comment header gradient start
+    --color-sky-400-a28: rgba(56, 189, 248, 0.28);
+    // comment header gradient end
+    --color-teal-500-a18: rgba(20, 184, 166, 0.18);
+    // comment header bottom border
+    --color-sky-300-a30: rgba(125, 211, 252, 0.3);
+    // comment accent soft (default)
+    --color-sky-300-a35: rgba(125, 211, 252, 0.35);
+    // comment edit button hover border
+    --color-sky-300-a50: rgba(125, 211, 252, 0.5);
+
+    // section dividers and action panel border
+    --color-slate-400-a20: rgba(148, 163, 184, 0.2);
+    // subtle borders (viewer controls, comment edit, message divider)
+    --color-slate-400-a25: rgba(148, 163, 184, 0.25);
+    // panel/input borders
+    --color-slate-400-a30: rgba(148, 163, 184, 0.3);
+    // comment textarea border
+    --color-slate-400-a35: rgba(148, 163, 184, 0.35);
+    // status pill and swatch borders
+    --color-slate-400-a50: rgba(148, 163, 184, 0.5);
+    // highlight swatch border
+    --color-slate-400-a60: rgba(148, 163, 184, 0.6);
+    // status label text
+    --color-slate-400-a80: rgba(148, 163, 184, 0.8);
+
+    // changed page label background
+    --color-amber-700-a35: rgba(180, 83, 9, 0.35);
+    // highlight count pill background
+    --color-yellow-500-a20: rgba(234, 179, 8, 0.2);
+    // selected highlight item outline glow
+    --color-yellow-500-a35: rgba(234, 179, 8, 0.35);
+    // selected highlight item border
+    --color-yellow-500-a60: rgba(234, 179, 8, 0.6);
+    // selected comment header gradient end
+    --color-amber-500-a20: rgba(245, 158, 11, 0.2);
+    // highlight count border
+    --color-yellow-400-a35: rgba(250, 204, 21, 0.35);
+    // loading status pill background
+    --color-amber-400-a18: rgba(251, 191, 36, 0.18);
+    // selected comment glow
+    --color-amber-400-a20: rgba(251, 191, 36, 0.2);
+    // changed page overlay glow
+    --color-amber-400-a25: rgba(251, 191, 36, 0.25);
+    // selected comment bubble glow and header gradient start
+    --color-amber-400-a35: rgba(251, 191, 36, 0.35);
+    // loading status pill border
+    --color-amber-400-a40: rgba(251, 191, 36, 0.4);
+    // selected comment accent soft and header border
+    --color-amber-400-a45: rgba(251, 191, 36, 0.45);
+    // changed page label border
+    --color-amber-400-a60: rgba(251, 191, 36, 0.6);
+    // changed page overlay border
+    --color-amber-400-a70: rgba(251, 191, 36, 0.7);
+    // error status pill background
+    --color-red-400-a20: rgba(248, 113, 113, 0.2);
+    // diff highlight background
+    --color-red-400-a25: rgba(248, 113, 113, 0.25);
+    // danger button border
+    --color-red-400-a40: rgba(248, 113, 113, 0.4);
+    // diff highlight border
+    --color-red-400-a65: rgba(248, 113, 113, 0.65);
+    // error status pill border
+    --color-red-400-a70: rgba(248, 113, 113, 0.7);
+  }
+}

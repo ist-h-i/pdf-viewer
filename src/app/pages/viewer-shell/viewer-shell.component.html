@@ -122,6 +122,7 @@
                               [style.height.%]="rect.height"
                               [style.backgroundColor]="marker.color"
                               [style.borderColor]="marker.color"
+                              [style.--highlight-strong]="highlightStrongColor(marker.color)"
                               [class.selected]="isSelectedMarker(marker.id)"
                               (click)="focusMarker(marker, $event)"
                               [class.draggable]="marker.source === 'selection' && !isReadOnlyMarker(marker)"
@@ -135,6 +136,7 @@
                               [style.top.%]="marker.rects[0].top"
                               [style.borderColor]="marker.color"
                               [style.backgroundColor]="marker.color"
+                              [style.--highlight-strong]="highlightStrongColor(marker.color)"
                               [class.selected]="isSelectedMarker(marker.id)"
                               (click)="focusMarker(marker, $event)"
                               [class.draggable]="marker.source === 'selection' && !isReadOnlyMarker(marker)"
@@ -429,8 +431,9 @@
                     @for (highlight of section.highlights; track trackHighlightItem($index, highlight)) {
                       <div
                         class="highlight-item"
-                        (click)="focusHighlight(section.page, $event)"
-                        (keydown.enter)="focusHighlight(section.page, $event)"
+                        [class.selected]="isSelectedMarker(highlight.id)"
+                        (click)="focusMarker(highlight, $event)"
+                        (keydown.enter)="focusMarker(highlight, $event)"
                         tabindex="0"
                       >
                         <span class="highlight-item__swatch" [style.backgroundColor]="highlight.color"></span>
