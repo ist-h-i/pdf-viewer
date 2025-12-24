@@ -260,11 +260,12 @@ pdf-viewer {
 
 :host ::ng-deep pdf-viewer .ng2-pdf-viewer-container,
 :host ::ng-deep pdf-viewer .pdfViewer {
-  @apply w-full h-auto block;
+  @apply w-full h-full block;
 }
 
 :host ::ng-deep pdf-viewer .ng2-pdf-viewer-container {
-  @apply relative overflow-visible min-h-px;
+  @apply relative overflow-visible;
+  min-height: 100%;
 }
 
 :host ::ng-deep pdf-viewer .pdfViewer .page {
