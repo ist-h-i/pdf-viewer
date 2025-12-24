@@ -89,10 +89,12 @@ export class PdfFacadeService {
       this.textLayouts.clear();
       this.pages.set([]);
       const buffer = await file.arrayBuffer();
-      this.originalFileBytes = buffer;
+      // Keep a stable copy for viewer/download; pdf.js transfers (detaches) its input buffer.
+      const sourceBuffer = buffer.slice(0);
+      this.originalFileBytes = sourceBuffer;
       const pdfjs = await this.ensurePdfJs();
-      const doc = await pdfjs.getDocument({ data: buffer.slice(0) }).promise;
-      nextSourceUrl = this.createObjectUrl(buffer, file.type);
+      const doc = await pdfjs.getDocument({ data: buffer }).promise;
+      nextSourceUrl = this.createObjectUrl(sourceBuffer, file.type);
       this.currentSourceUrl = nextSourceUrl;
       this.pdfDoc.set(doc);
       await this.renderAllPages(doc);

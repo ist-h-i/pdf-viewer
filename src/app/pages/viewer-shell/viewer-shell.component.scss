@@ -316,6 +316,7 @@ pdf-viewer {
 :host ::ng-deep pdf-viewer .ng2-pdf-viewer-container {
   position: relative;
   overflow: visible;
+  min-height: 1px;
 }
 
 :host ::ng-deep pdf-viewer .pdfViewer .page {

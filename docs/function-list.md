@@ -65,3 +65,4 @@
 ## 関連ドキュメント
 - コメント: [comment-design.md](comment-design.md) / [comment-uiux-redesign.md](comment-uiux-redesign.md)
 - ハイライト: [highlight-design.md](highlight-design.md) / [bug-report-selection-highlight-disabled.md](bug-report-selection-highlight-disabled.md)
+- フォーカス/スクロール: [focus-scroll-design.md](focus-scroll-design.md)

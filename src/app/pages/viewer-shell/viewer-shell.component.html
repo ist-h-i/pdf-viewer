@@ -54,7 +54,7 @@
   </header>
 
   <div class="layout">
-    <section class="viewer" (click)="closeContextMenu()">
+    <section class="viewer" #viewerSection (click)="closeContextMenu()">
       <div class="hint">
         <p>右クリックのコンテキストメニューからコメント追加とテキストハイライトを行えます。</p>
         <p>検索結果は自動でハイライト表示されます。</p>
@@ -67,7 +67,11 @@
       }
 
       @if (isBrowser && hasPdf()) {
-        <div class="viewer-grid" [class.viewer-grid--compare]="flags.compare && compare.compareTargetSource()">
+        <div
+          class="viewer-grid"
+          #viewerGrid
+          [class.viewer-grid--compare]="flags.compare && compare.compareTargetSource()"
+        >
           <div class="viewer-pane">
             @if (flags.compare && compare.compareTargetSource()) {
               <div class="viewer-pane__label">現在表示中</div>
@@ -124,6 +128,7 @@
                               [style.borderColor]="marker.color"
                               [style.--highlight-strong]="highlightStrongColor(marker.color)"
                               [class.selected]="isSelectedMarker(marker.id)"
+                              [attr.data-marker-id]="marker.id"
                               (click)="focusMarker(marker, $event)"
                               [class.draggable]="marker.source === 'selection' && !isReadOnlyMarker(marker)"
                               (pointerdown)="startMarkerDrag(marker, $event)"
@@ -138,6 +143,7 @@
                               [style.backgroundColor]="marker.color"
                               [style.--highlight-strong]="highlightStrongColor(marker.color)"
                               [class.selected]="isSelectedMarker(marker.id)"
+                              [attr.data-marker-id]="marker.id"
                               (click)="focusMarker(marker, $event)"
                               [class.draggable]="marker.source === 'selection' && !isReadOnlyMarker(marker)"
                               (pointerdown)="startMarkerDrag(marker, $event)"
@@ -174,6 +180,7 @@
                               ></span>
                               <div
                                 class="comment-bubble"
+                                [attr.data-comment-id]="comment.id"
                                 [style.left.%]="comment.bubbleX * 100"
                                 [style.top.%]="comment.bubbleY * 100"
                                 (click)="focusComment(comment, $event)"
@@ -401,7 +408,7 @@
               <ul class="list">
                 @for (hit of search.searchResults(); track hit.id) {
                   <li>
-                    <a [href]="'#' + pageAnchorId(hit.page)">
+                    <a [href]="'#' + pageAnchorId(hit.page)" (click)="focusSearchHit(hit, $event)">
                       p{{ hit.page }}: {{ hit.context }}
                     </a>
                   </li>

@@ -58,8 +58,10 @@ export class CompareFacadeService {
     try {
       const pdfjs = await this.ensurePdfJs();
       const buffer = await file.arrayBuffer();
-      const targetDoc = await pdfjs.getDocument({ data: buffer.slice(0) }).promise;
-      const sourceUrl = this.createObjectUrl(buffer, file.type);
+      // Keep a stable copy for display; pdf.js transfers (detaches) its input buffer.
+      const sourceBuffer = buffer.slice(0);
+      const targetDoc = await pdfjs.getDocument({ data: buffer }).promise;
+      const sourceUrl = this.createObjectUrl(sourceBuffer, file.type);
       await this.setTargetDoc(targetDoc, sourceUrl);
       const targetTexts = await this.collectAllText(targetDoc);
       this.summary.set(this.diff(baseTexts, targetTexts));

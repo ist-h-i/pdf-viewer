@@ -26,6 +26,7 @@ import {
   OcrResult,
   OcrScope,
   PageTextLayout,
+  SearchHit,
   PdfAnnotationExport,
   PdfHighlightAnnotation,
   TextSpanRects
@@ -145,6 +146,16 @@ type DragState =
       offsetY: number;
     }
   | {
+      type: 'marker-pending';
+      id: string;
+      page: number;
+      startClientX: number;
+      startClientY: number;
+      startX: number;
+      startY: number;
+      rects: HighlightRect[];
+    }
+  | {
       type: 'marker';
       id: string;
       page: number;
@@ -171,6 +182,8 @@ const COMMENT_TITLE_FALLBACK = 'コメントタイトル';
 export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   @ViewChildren('commentBody') private commentBodies!: QueryList<ElementRef<HTMLElement>>;
   @ViewChildren('replyTextarea') private replyTextareas!: QueryList<ElementRef<HTMLTextAreaElement>>;
+  @ViewChild('viewerSection') private viewerSection?: ElementRef<HTMLElement>;
+  @ViewChild('viewerGrid') private viewerGrid?: ElementRef<HTMLElement>;
   @ViewChild('pagesHost') private pagesHost?: ElementRef<HTMLElement>;
   @ViewChild('comparePagesHost') private comparePagesHost?: ElementRef<HTMLElement>;
   @ViewChild('pdfViewerHost') private pdfViewerHost?: ElementRef<HTMLElement>;
@@ -540,7 +553,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     }
     this.selectedMarkerId.set(marker.id);
     this.selectedCommentId.set(null);
-    this.scrollToPage(marker.page);
+    this.scrollMarkerIntoView(marker);
   }
 
   protected focusComment(comment: CommentCard, event?: Event): void {
@@ -552,7 +565,27 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     }
     this.selectedCommentId.set(comment.id);
     this.selectedMarkerId.set(null);
-    this.scrollToPage(comment.page);
+    this.scrollCommentIntoView(comment);
+  }
+
+  protected focusSearchHit(hit: SearchHit, event?: Event): void {
+    if (!this.flags.search) {
+      return;
+    }
+    const marker = this.annotations
+      .allMarkers()
+      .find((item) => item.source === 'search' && item.page === hit.page);
+    if (marker) {
+      this.selectedMarkerId.set(marker.id);
+      this.selectedCommentId.set(null);
+      this.scrollMarkerIntoView(marker);
+      event?.preventDefault();
+      return;
+    }
+    const scrolled = this.scrollToPage(hit.page);
+    if (scrolled) {
+      event?.preventDefault();
+    }
   }
 
   protected commentPreview(comment: CommentCard): string {
@@ -621,14 +654,13 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!this.flags.markers) {
       return;
     }
-    if (event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
     if (this.isReadOnlyMarker(marker)) {
       return;
     }
     if (marker.source !== 'selection') {
+      return;
+    }
+    if (event.button !== 0) {
       return;
     }
     const pageElement = this.pageElementMap.get(marker.page);
@@ -638,9 +670,11 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     event.stopPropagation();
     const pointer = this.normalizeCoordinates(event, pageElement);
     this.dragState = {
-      type: 'marker',
+      type: 'marker-pending',
       id: marker.id,
       page: marker.page,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
       startX: pointer.x * 100,
       startY: pointer.y * 100,
       rects: marker.rects.map((rect) => ({ ...rect }))
@@ -1301,11 +1335,28 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       this.annotations.moveCommentAnchor(this.dragState.id, nextX, nextY);
       return;
     }
+    if (this.dragState.type === 'marker-pending') {
+      const dx = event.clientX - this.dragState.startClientX;
+      const dy = event.clientY - this.dragState.startClientY;
+      const thresholdPx = 3;
+      if (dx * dx + dy * dy < thresholdPx * thresholdPx) {
+        return;
+      }
+      this.dragState = {
+        type: 'marker',
+        id: this.dragState.id,
+        page: this.dragState.page,
+        startX: this.dragState.startX,
+        startY: this.dragState.startY,
+        rects: this.dragState.rects
+      };
+    }
     if (this.dragState.type === 'marker') {
       const pageElement = this.pageElementMap.get(this.dragState.page);
       if (!pageElement) {
         return;
       }
+      event.preventDefault();
       const pointer = this.normalizeCoordinates(event, pageElement);
       const dx = pointer.x * 100 - this.dragState.startX;
       const dy = pointer.y * 100 - this.dragState.startY;
@@ -1404,20 +1455,200 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return this.clamp(height || fallback, COMMENT_BUBBLE_MIN_HEIGHT, COMMENT_BUBBLE_MAX_HEIGHT);
   }
 
-  private scrollToPage(pageNumber: number): void {
-    const pageElement = this.pageElementMap.get(pageNumber);
-    if (!pageElement) {
-      return;
+  private resolvePageElement(
+    pageNumber: number,
+    pageMap: Map<number, HTMLElement>,
+    viewerHost: HTMLElement | undefined
+  ): HTMLElement | null {
+    const cached = pageMap.get(pageNumber);
+    if (cached) {
+      return cached;
     }
-    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const pageElement =
+      this.collectPdfPageElements(viewerHost).find(
+        (candidate) => this.readPageNumber(candidate) === pageNumber
+      ) ?? null;
+    if (pageElement) {
+      pageMap.set(pageNumber, pageElement);
+    }
+    return pageElement;
   }
 
-  private scrollToComparePage(pageNumber: number): void {
-    const pageElement = this.comparePageElementMap.get(pageNumber);
-    if (!pageElement) {
+  private scrollMarkerIntoView(marker: Marker): void {
+    const rect = this.resolveMarkerClientRect(marker);
+    if (this.scrollViewerToRect(rect)) {
       return;
     }
-    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    this.scrollToPage(marker.page);
+  }
+
+  private scrollCommentIntoView(comment: CommentCard): void {
+    const rect = this.resolveCommentBubbleRect(comment);
+    if (this.scrollViewerToRect(rect)) {
+      return;
+    }
+    this.scrollToPage(comment.page);
+  }
+
+  private resolveMarkerClientRect(marker: Marker): DOMRect | null {
+    if (!this.isBrowser || typeof document === 'undefined') {
+      return null;
+    }
+    const domRects: DOMRect[] = [];
+    document
+      .querySelectorAll<HTMLElement>(
+        `.highlight[data-marker-id="${marker.id}"], .highlight-label[data-marker-id="${marker.id}"]`
+      )
+      .forEach((node) => {
+        const rect = node.getBoundingClientRect();
+        if (rect.width || rect.height) {
+          domRects.push(rect);
+        }
+      });
+    const mergedDomRect = this.mergeClientRects(domRects);
+    if (mergedDomRect) {
+      return mergedDomRect;
+    }
+    const pageElement = this.resolvePageElement(
+      marker.page,
+      this.pageElementMap,
+      this.pdfViewerHost?.nativeElement
+    );
+    if (!pageElement || !marker.rects.length) {
+      return null;
+    }
+    const pageRect = pageElement.getBoundingClientRect();
+    if (!pageRect.width || !pageRect.height) {
+      return null;
+    }
+    const bounds = marker.rects.map((rect) => ({
+      left: pageRect.left + (rect.left / 100) * pageRect.width,
+      top: pageRect.top + (rect.top / 100) * pageRect.height,
+      right: pageRect.left + ((rect.left + rect.width) / 100) * pageRect.width,
+      bottom: pageRect.top + ((rect.top + rect.height) / 100) * pageRect.height
+    }));
+    return this.mergeBounds(bounds);
+  }
+
+  private resolveCommentBubbleRect(comment: CommentCard): DOMRect | null {
+    if (!this.isBrowser || typeof document === 'undefined') {
+      return null;
+    }
+    const bubble = document.querySelector<HTMLElement>(
+      `.comment-bubble[data-comment-id="${comment.id}"]`
+    );
+    if (bubble) {
+      return bubble.getBoundingClientRect();
+    }
+    const pageElement = this.resolvePageElement(
+      comment.page,
+      this.pageElementMap,
+      this.pdfViewerHost?.nativeElement
+    );
+    if (!pageElement) {
+      return null;
+    }
+    const pageRect = pageElement.getBoundingClientRect();
+    if (!pageRect.width || !pageRect.height) {
+      return null;
+    }
+    const bubbleWidth = this.getBubbleWidth(comment);
+    const bubbleHeight = this.getBubbleHeight(comment);
+    const centerX = pageRect.left + pageRect.width * comment.bubbleX;
+    const centerY = pageRect.top + pageRect.height * comment.bubbleY;
+    return new DOMRect(centerX - bubbleWidth / 2, centerY - bubbleHeight / 2, bubbleWidth, bubbleHeight);
+  }
+
+  private mergeClientRects(rects: DOMRect[]): DOMRect | null {
+    if (!rects.length) {
+      return null;
+    }
+    const bounds = rects.map((rect) => ({
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom
+    }));
+    return this.mergeBounds(bounds);
+  }
+
+  private mergeBounds(
+    bounds: Array<{ left: number; top: number; right: number; bottom: number }>
+  ): DOMRect | null {
+    if (!bounds.length) {
+      return null;
+    }
+    let left = bounds[0].left;
+    let top = bounds[0].top;
+    let right = bounds[0].right;
+    let bottom = bounds[0].bottom;
+    for (let i = 1; i < bounds.length; i += 1) {
+      left = Math.min(left, bounds[i].left);
+      top = Math.min(top, bounds[i].top);
+      right = Math.max(right, bounds[i].right);
+      bottom = Math.max(bottom, bounds[i].bottom);
+    }
+    return new DOMRect(left, top, right - left, bottom - top);
+  }
+
+  private scrollToPage(pageNumber: number): boolean {
+    const pageElement = this.resolvePageElement(
+      pageNumber,
+      this.pageElementMap,
+      this.pdfViewerHost?.nativeElement
+    );
+    if (!pageElement) {
+      return false;
+    }
+    const rect = pageElement.getBoundingClientRect();
+    if (this.scrollViewerToRect(rect)) {
+      return true;
+    }
+    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    return true;
+  }
+
+  private scrollToComparePage(pageNumber: number): boolean {
+    const pageElement = this.resolvePageElement(
+      pageNumber,
+      this.comparePageElementMap,
+      this.comparePdfViewerHost?.nativeElement
+    );
+    if (!pageElement) {
+      return false;
+    }
+    const rect = pageElement.getBoundingClientRect();
+    if (this.scrollViewerToRect(rect)) {
+      return true;
+    }
+    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    return true;
+  }
+
+  private scrollViewerToRect(rect: DOMRect | null): boolean {
+    if (!this.isBrowser) {
+      return false;
+    }
+    const container = this.viewerGrid?.nativeElement;
+    if (!container || !rect) {
+      return false;
+    }
+    const containerRect = container.getBoundingClientRect();
+    if (!containerRect.width || !containerRect.height) {
+      return false;
+    }
+    const maxScrollLeft = Math.max(container.scrollWidth - container.clientWidth, 0);
+    const maxScrollTop = Math.max(container.scrollHeight - container.clientHeight, 0);
+    const targetCenterX =
+      rect.left - containerRect.left - container.clientLeft + container.scrollLeft + rect.width / 2;
+    const targetCenterY =
+      rect.top - containerRect.top - container.clientTop + container.scrollTop + rect.height / 2;
+    const desiredCenterX = container.clientWidth / 2;
+    const desiredCenterY = container.clientHeight / 2;
+    const nextLeft = this.clamp(targetCenterX - desiredCenterX, 0, maxScrollLeft);
+    const nextTop = this.clamp(targetCenterY - desiredCenterY, 0, maxScrollTop);
+    container.scrollTo({ left: nextLeft, top: nextTop, behavior: 'smooth' });
+    return true;
   }
 
   private shouldIgnoreSelection(event?: Event): boolean {
@@ -1720,27 +1951,29 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     }
 
     const pages: Array<{ pageNumber: number; rect: DOMRect }> = [];
-    if (this.pageElementMap.size > 0) {
-      for (const [pageNumber, pageElement] of this.pageElementMap.entries()) {
-        const rect = pageElement.getBoundingClientRect();
-        if (!rect.width || !rect.height) {
-          continue;
-        }
-        pages.push({ pageNumber, rect });
+    const seenPages = new Set<number>();
+    const pushPage = (pageNumber: number | null, rect: DOMRect | null): void => {
+      if (!pageNumber || !rect || !rect.width || !rect.height) {
+        return;
       }
-    } else {
-      this.collectPdfPageElements(this.pdfViewerHost?.nativeElement).forEach((pageElement) => {
-        const pageNumber = this.readPageNumber(pageElement);
-        if (!pageNumber) {
-          return;
-        }
-        const rect = pageElement.getBoundingClientRect();
-        if (!rect.width || !rect.height) {
-          return;
-        }
-        pages.push({ pageNumber, rect });
-      });
+      if (seenPages.has(pageNumber)) {
+        return;
+      }
+      pages.push({ pageNumber, rect });
+      seenPages.add(pageNumber);
+    };
+
+    for (const [pageNumber, pageElement] of this.pageElementMap.entries()) {
+      pushPage(pageNumber, pageElement.getBoundingClientRect());
     }
+
+    this.collectPdfPageElements(this.pdfViewerHost?.nativeElement).forEach((pageElement) => {
+      const pageNumber = this.readPageNumber(pageElement);
+      pushPage(pageNumber, pageElement.getBoundingClientRect());
+      if (pageNumber && !this.pageElementMap.has(pageNumber)) {
+        this.pageElementMap.set(pageNumber, pageElement);
+      }
+    });
 
     if (pages.length === 0) {
       return [];
@@ -1788,9 +2021,16 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
         return null;
       }
       let layer = this.textLayerElementMap.get(pageNumber) ?? null;
-      if (!layer) {
-        const pageElement = this.pageElementMap.get(pageNumber);
-        layer = (pageElement?.querySelector('.textLayer') as HTMLElement | null) ?? null;
+      let pageElement = this.pageElementMap.get(pageNumber) ?? null;
+      if (!pageElement) {
+        pageElement = this.resolvePageElement(
+          pageNumber,
+          this.pageElementMap,
+          this.pdfViewerHost?.nativeElement
+        );
+      }
+      if (!layer && pageElement) {
+        layer = pageElement.querySelector('.textLayer') as HTMLElement | null;
       }
       if (!layer || !this.selectionMatchesLayer(selection, layer)) {
         return null;
