@@ -1,83 +1,118 @@
-﻿<div class="shell">
-  <header class="top-bar">
-    <div class="top-bar__panel">
-      <div class="top-bar__section top-bar__section--picker">
-        <label class="file-picker">
-          <input type="file" accept="application/pdf" (change)="onFileChange($event)" />
+<div class="viewer-shell">
+  <header class="viewer-shell__top-bar">
+    <div class="viewer-shell__top-panel">
+      <div class="viewer-shell__top-section viewer-shell__top-section--picker">
+        <label class="viewer-shell__file-picker">
+          <input
+            class="viewer-shell__file-picker-input"
+            type="file"
+            accept="application/pdf"
+            (change)="onFileChange($event)"
+          />
           <span>ファイルを選択</span>
         </label>
       </div>
-      <div class="top-bar__section top-bar__section--controls">
-        <div class="viewer-controls">
-          <div class="control-group">
-            <button type="button" class="ghost" (click)="zoomOut()" [disabled]="!hasPdf()">-</button>
-            <span class="scale-indicator">{{ zoomPercent() }}%</span>
-            <button type="button" class="ghost" (click)="zoomIn()" [disabled]="!hasPdf()">+</button>
-            <button type="button" class="ghost" (click)="resetZoom()" [disabled]="!hasPdf()">等倍</button>
-          </div>
-          <div class="control-group">
+      <div class="viewer-shell__top-section viewer-shell__top-section--controls">
+        <div class="viewer-shell__toolbar">
+          <div class="viewer-shell__toolbar-group">
             <button
               type="button"
-              class="ghost"
-              [class.active]="showObjects()"
+              class="viewer-shell__button viewer-shell__button--ghost"
+              (click)="zoomOut()"
+              [disabled]="!hasPdf()"
+            >
+              -
+            </button>
+            <span class="viewer-shell__zoom-indicator">{{ zoomPercent() }}%</span>
+            <button
+              type="button"
+              class="viewer-shell__button viewer-shell__button--ghost"
+              (click)="zoomIn()"
+              [disabled]="!hasPdf()"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              class="viewer-shell__button viewer-shell__button--ghost"
+              (click)="resetZoom()"
+              [disabled]="!hasPdf()"
+            >
+              等倍
+            </button>
+          </div>
+          <div class="viewer-shell__toolbar-group">
+            <button
+              type="button"
+              class="viewer-shell__button viewer-shell__button--ghost"
+              [class.viewer-shell__button--active]="showObjects()"
               (click)="toggleObjects()"
               [disabled]="!hasPdf() || (!flags.markers && !flags.comments)"
             >
               オブジェクト {{ showObjects() ? 'ON' : 'OFF' }}
             </button>
-            <button type="button" (click)="downloadPdf()" [disabled]="!hasPdf()">PDF ダウンロード</button>
+            <button
+              type="button"
+              class="viewer-shell__button"
+              (click)="downloadPdf()"
+              [disabled]="!hasPdf()"
+            >
+              PDF ダウンロード
+            </button>
           </div>
         </div>
       </div>
-      <div class="top-bar__section top-bar__section--status">
-        <div class="status__document">
-          <span class="status-label">現在のドキュメント</span>
-          @if (pdf.pdfName()) {
-            <span class="status-name">{{ pdf.pdfName() }}</span>
-          } @else {
-            <span class="status-name">ファイル未選択</span>
-          }
-        </div>
-        <div class="status__meta">
-          @if (pdf.pageCount() > 0) {
-            <span class="status-pill">{{ pdf.pageCount() }} ページ</span>
-          }
-          @if (pdf.isLoading()) {
-            <span class="status-pill status-pill--loading">読み込み中...</span>
-          }
-          @if (pdf.lastError()) {
-            <span class="status-pill status-pill--error">{{ pdf.lastError() }}</span>
-          }
+      <div class="viewer-shell__top-section viewer-shell__top-section--status">
+        <div class="viewer-shell__status">
+          <div class="viewer-shell__status-document">
+            <span class="viewer-shell__status-label">現在のドキュメント</span>
+            @if (pdf.pdfName()) {
+              <span class="viewer-shell__status-name">{{ pdf.pdfName() }}</span>
+            } @else {
+              <span class="viewer-shell__status-name">ファイル未選択</span>
+            }
+          </div>
+          <div class="viewer-shell__status-meta">
+            @if (pdf.pageCount() > 0) {
+              <span class="viewer-shell__status-pill">{{ pdf.pageCount() }} ページ</span>
+            }
+            @if (pdf.isLoading()) {
+              <span class="viewer-shell__status-pill viewer-shell__status-pill--loading">読み込み中...</span>
+            }
+            @if (pdf.lastError()) {
+              <span class="viewer-shell__status-pill viewer-shell__status-pill--error">{{ pdf.lastError() }}</span>
+            }
+          </div>
         </div>
       </div>
     </div>
   </header>
 
-  <div class="layout">
-    <section class="viewer" #viewerSection (click)="closeContextMenu()">
-      <div class="hint">
+  <div class="viewer-shell__layout">
+    <section class="viewer-shell__viewer" #viewerSection (click)="closeContextMenu()">
+      <div class="viewer-shell__viewer-hint">
         <p>右クリックのコンテキストメニューからコメント追加とテキストハイライトを行えます。</p>
         <p>検索結果は自動でハイライト表示されます。</p>
       </div>
 
       @if (!hasPdf()) {
-        <div class="empty">
+        <div class="viewer-shell__empty-state">
           <p>PDF を読み込むとここに表示されます。</p>
         </div>
       }
 
       @if (isBrowser && hasPdf()) {
         <div
-          class="viewer-grid"
+          class="viewer-shell__viewer-grid"
           #viewerGrid
-          [class.viewer-grid--compare]="flags.compare && compare.compareTargetSource()"
+          [class.viewer-shell__viewer-grid--compare]="flags.compare && compare.compareTargetSource()"
         >
-          <div class="viewer-pane">
+          <div class="viewer-shell__viewer-pane">
             @if (flags.compare && compare.compareTargetSource()) {
-              <div class="viewer-pane__label">現在表示中</div>
+              <div class="viewer-shell__viewer-pane-label">現在表示中</div>
             }
-            <div class="pages" #pagesHost (contextmenu)="openContextMenuFromViewer($event)">
-              <div class="pdf-viewer-host" #pdfViewerHost>
+            <div class="viewer-shell__pages" #pagesHost (contextmenu)="openContextMenuFromViewer($event)">
+              <div class="viewer-shell__pdf-viewer-host" #pdfViewerHost>
                 <pdf-viewer
                   [src]="pdfSource()"
                   [show-all]="true"
@@ -90,26 +125,26 @@
                   (text-layer-rendered)="onTextLayerRendered($event)"
                 ></pdf-viewer>
               </div>
-              <div class="page-overlays">
+              <div class="viewer-shell__page-overlays">
                 @for (overlay of pageOverlays(); track trackPageOverlay($index, overlay)) {
                   <div
-                    class="page-overlay"
-                    [class.page-overlay--changed]="isChangedPage(overlay.pageNumber)"
+                    class="viewer-shell__page-overlay"
+                    [class.viewer-shell__page-overlay--changed]="isChangedPage(overlay.pageNumber)"
                     [attr.id]="pageAnchorId(overlay.pageNumber)"
                     [attr.data-page]="overlay.pageNumber"
-                    [style.left.px]="overlay.left"
-                    [style.top.px]="overlay.top"
-                    [style.width.px]="overlay.width"
-                    [style.height.px]="overlay.height"
+                    [style.--overlay-left]="overlay.left + 'px'"
+                    [style.--overlay-top]="overlay.top + 'px'"
+                    [style.--overlay-width]="overlay.width + 'px'"
+                    [style.--overlay-height]="overlay.height + 'px'"
                   >
                     @if (flags.compare && compare.compareTargetSource()) {
                       @for (rect of diffRectsFor(overlay.pageNumber); track $index) {
                         <div
-                          class="diff-highlight"
-                          [style.left.%]="rect.left"
-                          [style.top.%]="rect.top"
-                          [style.width.%]="rect.width"
-                          [style.height.%]="rect.height"
+                          class="viewer-shell__diff-highlight"
+                          [style.--diff-left]="rect.left + '%'"
+                          [style.--diff-top]="rect.top + '%'"
+                          [style.--diff-width]="rect.width + '%'"
+                          [style.--diff-height]="rect.height + '%'"
                         ></div>
                       }
                     }
@@ -119,33 +154,35 @@
                         @for (marker of markersFor(overlay.pageNumber); track trackMarker($index, marker)) {
                           @for (rect of marker.rects; track $index) {
                             <div
-                              class="highlight"
-                              [style.left.%]="rect.left"
-                              [style.top.%]="rect.top"
-                              [style.width.%]="rect.width"
-                              [style.height.%]="rect.height"
-                              [style.backgroundColor]="marker.color"
-                              [style.borderColor]="marker.color"
+                              class="viewer-shell__page-highlight"
+                              [style.--marker-left]="rect.left + '%'"
+                              [style.--marker-top]="rect.top + '%'"
+                              [style.--marker-width]="rect.width + '%'"
+                              [style.--marker-height]="rect.height + '%'"
+                              [style.--marker-color]="marker.color"
                               [style.--highlight-strong]="highlightStrongColor(marker.color)"
-                              [class.selected]="isSelectedMarker(marker.id)"
+                              [class.viewer-shell__page-highlight--selected]="isSelectedMarker(marker.id)"
                               [attr.data-marker-id]="marker.id"
                               (click)="focusMarker(marker, $event)"
-                              [class.draggable]="marker.source === 'selection' && !isReadOnlyMarker(marker)"
+                              [class.viewer-shell__page-highlight--draggable]="
+                                marker.source === 'selection' && !isReadOnlyMarker(marker)
+                              "
                               (pointerdown)="startMarkerDrag(marker, $event)"
                             ></div>
                           }
                           @if (marker.label && marker.rects.length) {
                             <div
-                              class="highlight-label"
-                              [style.left.%]="marker.rects[0].left"
-                              [style.top.%]="marker.rects[0].top"
-                              [style.borderColor]="marker.color"
-                              [style.backgroundColor]="marker.color"
+                              class="viewer-shell__page-highlight-label"
+                              [style.--label-left]="marker.rects[0].left + '%'"
+                              [style.--label-top]="marker.rects[0].top + '%'"
+                              [style.--label-color]="marker.color"
                               [style.--highlight-strong]="highlightStrongColor(marker.color)"
-                              [class.selected]="isSelectedMarker(marker.id)"
+                              [class.viewer-shell__page-highlight-label--selected]="isSelectedMarker(marker.id)"
                               [attr.data-marker-id]="marker.id"
                               (click)="focusMarker(marker, $event)"
-                              [class.draggable]="marker.source === 'selection' && !isReadOnlyMarker(marker)"
+                              [class.viewer-shell__page-highlight-label--draggable]="
+                                marker.source === 'selection' && !isReadOnlyMarker(marker)
+                              "
                               (pointerdown)="startMarkerDrag(marker, $event)"
                             >
                               {{ marker.label }}
@@ -158,41 +195,46 @@
                         @for (comment of commentsFor(overlay.pageNumber); track trackComment($index, comment)) {
                           @if (calloutLayout(comment); as callout) {
                             <div
-                              class="comment"
-                              [class.selected]="isSelectedComment(comment.id)"
-                              [style.--line-length.px]="callout.lineLength"
+                              class="viewer-shell__comment-callout"
+                              [class.viewer-shell__comment-callout--selected]="isSelectedComment(comment.id)"
+                              [style.--line-length]="callout.lineLength + 'px'"
                               [style.--line-angle]="callout.lineAngle + 'deg'"
-                              [style.--bubble-width.px]="comment.bubbleWidth ?? commentLayoutSettings().bubbleWidth"
-                              [style.--bubble-height.px]="(comment.bubbleHeight ?? commentLayoutSettings().bubbleHeight) || commentLayoutSettings().bubbleHeight"
+                              [style.--bubble-width]="
+                                (comment.bubbleWidth ?? commentLayoutSettings().bubbleWidth) + 'px'
+                              "
+                              [style.--bubble-height]="
+                                ((comment.bubbleHeight ?? commentLayoutSettings().bubbleHeight) ||
+                                  commentLayoutSettings().bubbleHeight) + 'px'
+                              "
                             >
                               <span
-                                class="comment-anchor"
-                                [style.left.%]="comment.anchorX * 100"
-                                [style.top.%]="comment.anchorY * 100"
+                                class="viewer-shell__comment-anchor"
+                                [style.--anchor-left]="comment.anchorX * 100 + '%'"
+                                [style.--anchor-top]="comment.anchorY * 100 + '%'"
                                 (click)="focusComment(comment, $event)"
                                 (pointerdown)="startCommentAnchorDrag(comment, $event)"
                                 aria-label="コメントのアンカーを移動"
                               ></span>
                               <span
-                                class="comment-line"
-                                [style.left.%]="comment.anchorX * 100"
-                                [style.top.%]="comment.anchorY * 100"
+                                class="viewer-shell__comment-line"
+                                [style.--line-left]="comment.anchorX * 100 + '%'"
+                                [style.--line-top]="comment.anchorY * 100 + '%'"
                               ></span>
                               <div
-                                class="comment-bubble"
+                                class="viewer-shell__comment-bubble"
                                 [attr.data-comment-id]="comment.id"
-                                [style.left.%]="comment.bubbleX * 100"
-                                [style.top.%]="comment.bubbleY * 100"
+                                [style.--bubble-left]="comment.bubbleX * 100 + '%'"
+                                [style.--bubble-top]="comment.bubbleY * 100 + '%'"
                                 (click)="focusComment(comment, $event)"
                               >
                                 <div
-                                  class="comment-bubble__header"
+                                  class="viewer-shell__comment-bubble-header"
                                   (pointerdown)="startCommentBubbleDrag(comment, $event)"
                                 >
                                   @if (isEditingTitle(comment.id)) {
                                     <input
                                       type="text"
-                                      class="comment-bubble__title-input"
+                                      class="viewer-shell__comment-title-input"
                                       [ngModel]="titleDraft(comment.id)"
                                       (ngModelChange)="setTitleDraft(comment.id, $event)"
                                       (keyup.enter)="saveTitleEdit(comment.id)"
@@ -204,15 +246,15 @@
                                       autofocus
                                     />
                                   } @else {
-                                    <span class="comment-bubble__title">
+                                    <span class="viewer-shell__comment-bubble-title">
                                       {{ commentTitle(comment) }}
                                     </span>
                                   }
-                                  <span class="comment-bubble__meta">p{{ comment.page }}</span>
+                                  <span class="viewer-shell__comment-bubble-meta">p{{ comment.page }}</span>
                                   @if (!isReadOnlyComment(comment)) {
                                     <button
                                       type="button"
-                                      class="comment-bubble__edit"
+                                      class="viewer-shell__comment-bubble-edit"
                                       (click)="startTitleEdit(comment, $event)"
                                       (pointerdown)="$event.stopPropagation()"
                                       aria-label="タイトルを編集"
@@ -225,25 +267,30 @@
                                     </button>
                                   }
                                 </div>
-                                <div class="comment-bubble__body" #commentBody [attr.data-comment-id]="comment.id">
-                                  <div class="comment-bubble__thread">
+                                <div
+                                  class="viewer-shell__comment-bubble-body"
+                                  #commentBody
+                                  [attr.data-comment-id]="comment.id"
+                                >
+                                  <div class="viewer-shell__comment-bubble-thread">
                                     @for (message of comment.messages; track message.id) {
-                                      <div class="comment-bubble__message">
+                                      <div class="viewer-shell__comment-bubble-message">
                                         <p>{{ message.text }}</p>
-                                        <span class="comment-bubble__timestamp">
+                                        <span class="viewer-shell__comment-bubble-timestamp">
                                           {{ message.createdAt | date: 'MM/dd HH:mm' }}
                                         </span>
                                       </div>
                                     } @empty {
-                                      <p class="comment-bubble__empty">コメントはまだありません。</p>
+                                      <p class="viewer-shell__comment-bubble-empty">コメントはまだありません。</p>
                                     }
                                   </div>
                                 </div>
                                 @if (isSelectedComment(comment.id) && !isReadOnlyComment(comment)) {
-                                  <div class="comment-bubble__actions">
+                                  <div class="viewer-shell__comment-bubble-actions">
                                     <textarea
                                       #replyTextarea
                                       rows="2"
+                                      class="viewer-shell__textarea"
                                       [attr.data-comment-id]="comment.id"
                                       [placeholder]="comment.messages.length ? '返信を記入' : 'コメントを追加'"
                                       [ngModel]="replyDraft(comment.id)"
@@ -251,10 +298,11 @@
                                       (keydown)="onReplyKeydown(comment.id, $event)"
                                       (pointerdown)="$event.stopPropagation()"
                                     ></textarea>
-                                    <div class="comment-bubble__actions-row">
-                                      <span class="small-text">コメントを会話として残せます。</span>
+                                    <div class="viewer-shell__comment-bubble-actions-row">
+                                      <span class="viewer-shell__helper-text">コメントを会話として残せます。</span>
                                       <button
                                         type="button"
+                                        class="viewer-shell__button"
                                         (click)="addReply(comment.id)"
                                         [disabled]="!hasReplyDraft(comment.id)"
                                         (pointerdown)="$event.stopPropagation()"
@@ -266,17 +314,17 @@
                                 }
                                 @if (!isReadOnlyComment(comment)) {
                                   <span
-                                    class="bubble-handle bubble-handle-width"
+                                    class="viewer-shell__bubble-handle viewer-shell__bubble-handle--width"
                                     aria-hidden="true"
                                     (pointerdown)="startCommentResize(comment, 'bubbleHeight', $event)"
                                   ></span>
                                   <span
-                                    class="bubble-handle bubble-handle-height"
+                                    class="viewer-shell__bubble-handle viewer-shell__bubble-handle--height"
                                     aria-hidden="true"
                                     (pointerdown)="startCommentResize(comment, 'bubbleWidth', $event)"
                                   ></span>
                                   <span
-                                    class="bubble-handle bubble-handle-corner"
+                                    class="viewer-shell__bubble-handle viewer-shell__bubble-handle--corner"
                                     aria-hidden="true"
                                     (pointerdown)="startCommentResize(comment, 'bubbleBoth', $event)"
                                   ></span>
@@ -288,22 +336,22 @@
                       }
                     }
 
-                    <div class="page-label">Page {{ overlay.pageNumber }}</div>
+                    <div class="viewer-shell__page-label">Page {{ overlay.pageNumber }}</div>
                   </div>
                 }
               </div>
             </div>
           </div>
           @if (flags.compare && compare.compareTargetSource()) {
-            <div class="viewer-pane viewer-pane--compare">
-              <div class="viewer-pane__label">比較対象</div>
+            <div class="viewer-shell__viewer-pane">
+              <div class="viewer-shell__viewer-pane-label">比較対象</div>
               @if (!compare.compareTargetPages().length) {
-                <div class="empty">
+                <div class="viewer-shell__empty-state">
                   <p>比較対象 PDF を読み込み中...</p>
                 </div>
               }
-              <div class="pages compare-pages" #comparePagesHost>
-                <div class="pdf-viewer-host" #comparePdfViewerHost>
+              <div class="viewer-shell__pages" #comparePagesHost>
+                <div class="viewer-shell__pdf-viewer-host" #comparePdfViewerHost>
                   <pdf-viewer
                     [src]="comparePdfSource()"
                     [show-all]="true"
@@ -316,28 +364,28 @@
                     (text-layer-rendered)="onCompareTextLayerRendered($event)"
                   ></pdf-viewer>
                 </div>
-                <div class="page-overlays">
+                <div class="viewer-shell__page-overlays">
                   @for (overlay of comparePageOverlays(); track trackPageOverlay($index, overlay)) {
                     <div
-                      class="page-overlay"
-                      [class.page-overlay--changed]="isChangedPage(overlay.pageNumber)"
+                      class="viewer-shell__page-overlay"
+                      [class.viewer-shell__page-overlay--changed]="isChangedPage(overlay.pageNumber)"
                       [attr.id]="comparePageAnchorId(overlay.pageNumber)"
                       [attr.data-compare-page]="overlay.pageNumber"
-                      [style.left.px]="overlay.left"
-                      [style.top.px]="overlay.top"
-                      [style.width.px]="overlay.width"
-                      [style.height.px]="overlay.height"
+                      [style.--overlay-left]="overlay.left + 'px'"
+                      [style.--overlay-top]="overlay.top + 'px'"
+                      [style.--overlay-width]="overlay.width + 'px'"
+                      [style.--overlay-height]="overlay.height + 'px'"
                     >
                       @for (rect of compareDiffRectsFor(overlay.pageNumber); track $index) {
                         <div
-                          class="diff-highlight"
-                          [style.left.%]="rect.left"
-                          [style.top.%]="rect.top"
-                          [style.width.%]="rect.width"
-                          [style.height.%]="rect.height"
+                          class="viewer-shell__diff-highlight"
+                          [style.--diff-left]="rect.left + '%'"
+                          [style.--diff-top]="rect.top + '%'"
+                          [style.--diff-width]="rect.width + '%'"
+                          [style.--diff-height]="rect.height + '%'"
                         ></div>
                       }
-                      <div class="page-label">Page {{ overlay.pageNumber }}</div>
+                      <div class="viewer-shell__page-label">Page {{ overlay.pageNumber }}</div>
                     </div>
                   }
                 </div>
@@ -349,25 +397,38 @@
 
       @if (contextMenu().visible) {
         <div
-          class="context-menu"
-          [style.left.px]="contextMenu().x"
-          [style.top.px]="contextMenu().y"
+          class="viewer-shell__context-menu"
+          [style.--context-menu-left]="contextMenu().x + 'px'"
+          [style.--context-menu-top]="contextMenu().y + 'px'"
           (click)="$event.stopPropagation()"
         >
           @if (flags.comments) {
-            <button type="button" (click)="addCommentFromContextMenu()">コメントを追加</button>
+            <button
+              type="button"
+              class="viewer-shell__button viewer-shell__button--menu"
+              (click)="addCommentFromContextMenu()"
+            >
+              コメントを追加
+            </button>
           }
           @if (flags.markers) {
-            <button type="button" (click)="addHighlightFromSelection()" [disabled]="!contextMenu().canHighlight">
+            <button
+              type="button"
+              class="viewer-shell__button viewer-shell__button--menu"
+              (click)="addHighlightFromSelection()"
+              [disabled]="!contextMenu().canHighlight"
+            >
               選択範囲をハイライト
             </button>
-            <div class="highlight-swatches">
+            <div class="viewer-shell__highlight-swatches">
               @for (swatch of highlightSwatches; track swatch.id) {
                 <button
                   type="button"
-                  class="highlight-swatch"
-                  [class.selected]="swatch.color === selectedHighlightColor()"
-                  [style.backgroundColor]="swatch.color"
+                  class="viewer-shell__highlight-swatch"
+                  [class.viewer-shell__highlight-swatch--selected]="
+                    swatch.color === selectedHighlightColor()
+                  "
+                  [style.--swatch-color]="swatch.color"
                   (click)="selectHighlightColor(swatch.color)"
                   [attr.aria-label]="swatch.label"
                   [attr.aria-pressed]="swatch.color === selectedHighlightColor()"
@@ -375,7 +436,7 @@
               }
             </div>
             @if (contextMenu().selectionText) {
-              <p class="small-text selection-preview">
+              <p class="viewer-shell__helper-text viewer-shell__selection-preview">
                 {{ contextMenu().selectionText }}
               </p>
             }
@@ -384,31 +445,49 @@
       }
     </section>
 
-    <aside class="side-panel">
+    <aside class="viewer-shell__side-panel">
       @if (flags.search) {
-        <section class="panel-block">
-          <div class="panel-header">
-            <h3>全文検索</h3>
-            <button type="button" class="ghost" (click)="clearSearch()">クリア</button>
+        <section class="viewer-shell__panel">
+          <div class="viewer-shell__panel-header">
+            <h3 class="viewer-shell__panel-title">全文検索</h3>
+            <button
+              type="button"
+              class="viewer-shell__button viewer-shell__button--ghost"
+              (click)="clearSearch()"
+            >
+              クリア
+            </button>
           </div>
-          <div class="panel-body">
-            <div class="control">
+          <div class="viewer-shell__panel-body">
+            <div class="viewer-shell__form-row">
               <input
+                class="viewer-shell__input viewer-shell__input--grow"
                 type="search"
                 placeholder="キーワード"
                 [ngModel]="searchQuery()"
                 (ngModelChange)="searchQuery.set($event)"
               />
-              <button type="button" (click)="performSearch()" [disabled]="search.isSearching()">検索</button>
+              <button
+                type="button"
+                class="viewer-shell__button"
+                (click)="performSearch()"
+                [disabled]="search.isSearching()"
+              >
+                検索
+              </button>
             </div>
             @if (search.isSearching()) {
-              <div class="small-text">検索中...</div>
+              <div class="viewer-shell__helper-text">検索中...</div>
             }
             @if (search.searchResults().length) {
-              <ul class="list">
+              <ul class="viewer-shell__search-results">
                 @for (hit of search.searchResults(); track hit.id) {
                   <li>
-                    <a [href]="'#' + pageAnchorId(hit.page)" (click)="focusSearchHit(hit, $event)">
+                    <a
+                      class="viewer-shell__link"
+                      [href]="'#' + pageAnchorId(hit.page)"
+                      (click)="focusSearchHit(hit, $event)"
+                    >
                       p{{ hit.page }}: {{ hit.context }}
                     </a>
                   </li>
@@ -420,36 +499,44 @@
       }
 
       @if (flags.markers) {
-        <section class="panel-block">
-          <div class="panel-header">
-            <h3>ハイライト</h3>
-            <span class="badge">{{ highlightCount() }}</span>
+        <section class="viewer-shell__panel">
+          <div class="viewer-shell__panel-header">
+            <h3 class="viewer-shell__panel-title">ハイライト</h3>
+            <span class="viewer-shell__badge">{{ highlightCount() }}</span>
           </div>
-          <div class="panel-body">
-            <div class="small-text">ページ上で右クリックし「選択範囲をハイライト」を選択してください。</div>
-            <div class="highlight-list">
+          <div class="viewer-shell__panel-body">
+            <div class="viewer-shell__helper-text">
+              ページ上で右クリックし「選択範囲をハイライト」を選択してください。
+            </div>
+            <div class="viewer-shell__highlight-list">
               @for (section of highlightSections(); track trackHighlightSection($index, section)) {
-                <div class="highlight-section">
-                  <div class="highlight-section__header">
-                    <span class="highlight-section__label">p{{ section.page }}</span>
-                    <span class="highlight-section__count">{{ section.highlights.length }}</span>
+                <div class="viewer-shell__highlight-section">
+                  <div class="viewer-shell__highlight-section-header">
+                    <span class="viewer-shell__highlight-section-label">p{{ section.page }}</span>
+                    <span class="viewer-shell__highlight-section-count">{{ section.highlights.length }}</span>
                   </div>
-                  <div class="highlight-section__items">
+                  <div class="viewer-shell__highlight-items">
                     @for (highlight of section.highlights; track trackHighlightItem($index, highlight)) {
                       <div
-                        class="highlight-item"
-                        [class.selected]="isSelectedMarker(highlight.id)"
+                        class="viewer-shell__highlight-item"
+                        [class.viewer-shell__highlight-item--selected]="isSelectedMarker(highlight.id)"
                         (click)="focusMarker(highlight, $event)"
                         (keydown.enter)="focusMarker(highlight, $event)"
                         tabindex="0"
                       >
-                        <span class="highlight-item__swatch" [style.backgroundColor]="highlight.color"></span>
-                        <span class="highlight-item__title" [attr.title]="highlightLabel(highlight)">
+                        <span
+                          class="viewer-shell__highlight-item-swatch"
+                          [style.--swatch-color]="highlight.color"
+                        ></span>
+                        <span
+                          class="viewer-shell__highlight-item-title"
+                          [attr.title]="highlightLabel(highlight)"
+                        >
                           {{ highlightLabel(highlight) }}
                         </span>
                         @if (!isReadOnlyMarker(highlight)) {
                           <button
-                            class="ghost danger highlight-item__delete"
+                            class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger viewer-shell__button--compact viewer-shell__highlight-item-delete"
                             type="button"
                             (click)="removeHighlight(highlight.id); $event.stopPropagation()"
                           >
@@ -467,39 +554,41 @@
       }
 
       @if (flags.comments) {
-        <section class="panel-block">
-          <div class="panel-header">
-            <h3>コメント一覧</h3>
-            <span class="badge">{{ annotations.commentCount() }}</span>
+        <section class="viewer-shell__panel">
+          <div class="viewer-shell__panel-header">
+            <h3 class="viewer-shell__panel-title">コメント一覧</h3>
+            <span class="viewer-shell__badge">{{ annotations.commentCount() }}</span>
           </div>
-          <div class="panel-body">
-            <div class="small-text">ページ上で右クリックし「コメントを追加」を選択してください。</div>
-            <div class="comment-list">
+          <div class="viewer-shell__panel-body">
+            <div class="viewer-shell__helper-text">
+              ページ上で右クリックし「コメントを追加」を選択してください。
+            </div>
+            <div class="viewer-shell__comment-list">
               @for (section of commentSections(); track trackCommentSection($index, section)) {
-                <div class="comment-section">
-                  <div class="comment-section__header">
-                    <span class="comment-section__label">p{{ section.page }}</span>
-                    <span class="comment-section__count">{{ section.comments.length }}</span>
+                <div class="viewer-shell__comment-section">
+                  <div class="viewer-shell__comment-section-header">
+                    <span class="viewer-shell__comment-section-label">p{{ section.page }}</span>
+                    <span class="viewer-shell__comment-section-count">{{ section.comments.length }}</span>
                   </div>
-                  <div class="comment-section__items">
+                  <div class="viewer-shell__comment-items">
                     @for (comment of section.comments; track trackComment($index, comment)) {
                       <div
-                        class="comment-item"
-                        [class.selected]="isSelectedComment(comment.id)"
+                        class="viewer-shell__comment-item"
+                        [class.viewer-shell__comment-item--selected]="isSelectedComment(comment.id)"
                         (click)="focusComment(comment, $event)"
                         (keydown.enter)="focusComment(comment, $event)"
                         tabindex="0"
                       >
                         @if (!isReadOnlyComment(comment)) {
                           <button
-                            class="ghost danger comment-item__delete"
+                            class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger viewer-shell__button--compact viewer-shell__comment-item-delete"
                             type="button"
                             (click)="removeComment(comment.id); $event.stopPropagation()"
                           >
                             削除
                           </button>
                         }
-                        <span class="comment-item__title" [attr.title]="commentTitle(comment)">
+                        <span class="viewer-shell__comment-item-title" [attr.title]="commentTitle(comment)">
                           {{ commentTitle(comment) }}
                         </span>
                       </div>
@@ -513,20 +602,25 @@
       }
 
       @if (flags.ocr) {
-        <section class="panel-block">
-          <div class="panel-header">
-            <h3>OCR とテキスト抽出</h3>
+        <section class="viewer-shell__panel">
+          <div class="viewer-shell__panel-header">
+            <h3 class="viewer-shell__panel-title">OCR とテキスト抽出</h3>
           </div>
-          <div class="panel-body">
-            <div class="control">
+          <div class="viewer-shell__panel-body">
+            <div class="viewer-shell__form-row">
               <label>対象</label>
-              <select [ngModel]="ocrScope()" (ngModelChange)="ocrScope.set($event)">
+              <select
+                class="viewer-shell__select viewer-shell__select--grow"
+                [ngModel]="ocrScope()"
+                (ngModelChange)="ocrScope.set($event)"
+              >
                 <option value="page">ページ</option>
                 <option value="all">全ページ</option>
               </select>
               @if (ocrScope() === 'page') {
                 <label>ページ</label>
                 <input
+                  class="viewer-shell__input viewer-shell__input--grow"
                   type="number"
                   min="1"
                   [max]="pdf.pageCount() || 1"
@@ -534,23 +628,42 @@
                   (ngModelChange)="selectedOcrPage.set($event)"
                 />
               }
-              <button type="button" (click)="runOcr()" [disabled]="ocr.isRunning()">実行</button>
+              <button
+                type="button"
+                class="viewer-shell__button"
+                (click)="runOcr()"
+                [disabled]="ocr.isRunning()"
+              >
+                実行
+              </button>
             </div>
             @if (ocr.isRunning()) {
-              <div class="small-text">OCR 実行中...</div>
+              <div class="viewer-shell__helper-text">OCR 実行中...</div>
             }
             @if (ocr.result(); as result) {
-              <div class="card ocr-result">
-                <div class="row">
-                  <span class="tag">{{ ocrResultTag(result) }}</span>
-                  <span class="small-text">{{ result.durationMs }} ms</span>
+              <div class="viewer-shell__card">
+                <div class="viewer-shell__card-row">
+                  <span class="viewer-shell__tag">{{ ocrResultTag(result) }}</span>
+                  <span class="viewer-shell__helper-text">{{ result.durationMs }} ms</span>
                 </div>
-                <div class="control">
-                  <button type="button" class="ghost" (click)="copyOcrResult()">クリップボードへコピー</button>
-                  <button type="button" class="ghost" (click)="exportOcrResult()">テキストで保存</button>
+                <div class="viewer-shell__form-row">
+                  <button
+                    type="button"
+                    class="viewer-shell__button viewer-shell__button--ghost"
+                    (click)="copyOcrResult()"
+                  >
+                    クリップボードへコピー
+                  </button>
+                  <button
+                    type="button"
+                    class="viewer-shell__button viewer-shell__button--ghost"
+                    (click)="exportOcrResult()"
+                  >
+                    テキストで保存
+                  </button>
                 </div>
                 @if (ocrActionMessage()) {
-                  <div class="small-text">{{ ocrActionMessage() }}</div>
+                  <div class="viewer-shell__helper-text">{{ ocrActionMessage() }}</div>
                 }
                 <pre>{{ result.text }}</pre>
               </div>
@@ -560,47 +673,54 @@
       }
 
       @if (flags.compare) {
-        <section class="panel-block">
-          <div class="panel-header">
-            <h3>PDF ファイル比較</h3>
+        <section class="viewer-shell__panel">
+          <div class="viewer-shell__panel-header">
+            <h3 class="viewer-shell__panel-title">PDF ファイル比較</h3>
             <button
               type="button"
-              class="ghost danger"
+              class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger"
               (click)="clearCompareMode()"
               [disabled]="compare.isRunning() || !compare.compareTargetSource()"
             >
               比較解除
             </button>
           </div>
-          <div class="panel-body">
-            <label class="file-picker">
-              <input type="file" accept="application/pdf" (change)="onCompareFileChange($event)" />
+          <div class="viewer-shell__panel-body">
+            <label class="viewer-shell__file-picker">
+              <input
+                class="viewer-shell__file-picker-input"
+                type="file"
+                accept="application/pdf"
+                (change)="onCompareFileChange($event)"
+              />
               <span>比較 PDF を選択</span>
             </label>
             @if (compare.compareTargetName()) {
-              <div class="small-text">
-                対象: {{ compare.compareTargetName() }}
-              </div>
+              <div class="viewer-shell__helper-text">対象: {{ compare.compareTargetName() }}</div>
             }
             @if (compare.isRunning()) {
-              <div class="small-text">比較中...</div>
+              <div class="viewer-shell__helper-text">比較中...</div>
             }
             @if (compare.result()) {
-              <div class="card">
+              <div class="viewer-shell__card">
                 <p>{{ compare.result()?.note }}</p>
                 @if (compare.result()?.changedPages?.length) {
-                  <div class="compare-pages-list">
-                    <span class="small-text">変更ページ</span>
-                    <div class="page-chips">
+                  <div class="viewer-shell__compare-pages">
+                    <span class="viewer-shell__helper-text">変更ページ</span>
+                    <div class="viewer-shell__page-chips">
                       @for (page of compare.result()?.changedPages ?? []; track $index) {
-                        <button type="button" class="ghost small" (click)="jumpToComparePage(page)">
+                        <button
+                          type="button"
+                          class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--small"
+                          (click)="jumpToComparePage(page)"
+                        >
                           p{{ page }}
                         </button>
                       }
                     </div>
                   </div>
                 } @else {
-                  <p class="small-text">変更ページ: なし</p>
+                  <p class="viewer-shell__helper-text">変更ページ: なし</p>
                 }
               </div>
             }

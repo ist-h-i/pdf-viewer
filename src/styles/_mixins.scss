@@ -1,0 +1,75 @@
+@function color($token) {
+  @return var(--color-#{$token});
+}
+
+$font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+@mixin surface($background, $border-color, $radius: 12px) {
+  @apply border border-solid;
+  border-radius: $radius;
+  background-color: $background;
+  border-color: $border-color;
+}
+
+@mixin text-ellipsis {
+  @apply truncate;
+}
+
+@mixin focus-ring($color) {
+  @apply outline outline-2 outline-offset-2;
+  outline-color: $color;
+}
+
+@mixin field-base {
+  @apply w-full box-border rounded-lg border border-solid px-2.5 py-2;
+  background-color: color('slate-900');
+  border-color: color('gray-800');
+  color: color('steel-100');
+}
+
+@mixin rect-vars($left, $top, $width, $height, $fallback: 0px) {
+  left: var($left, $fallback);
+  top: var($top, $fallback);
+  width: var($width, $fallback);
+  height: var($height, $fallback);
+}
+
+@mixin point-vars($left, $top, $fallback: 0) {
+  left: var($left, $fallback);
+  top: var($top, $fallback);
+}
+
+@mixin list-section {
+  @apply flex flex-col gap-1.5 px-1 py-1.5;
+  @apply border-t border-solid;
+  border-top-color: color('slate-400-a20');
+}
+
+@mixin list-section-first {
+  @apply border-t-0 pt-0.5;
+}
+
+@mixin list-section-header {
+  @apply flex items-center justify-between text-[11px] font-bold tracking-[0.08em] uppercase;
+  color: color('steel-300');
+}
+
+@mixin list-count($background, $border, $color) {
+  @apply inline-flex items-center justify-center rounded-full min-w-[22px] px-1.5 py-0.5 text-[10px] font-bold;
+  @apply border border-solid;
+  background-color: $background;
+  border-color: $border;
+  color: $color;
+}
+
+@mixin list-item-base {
+  @apply flex min-w-0 items-center gap-1.5 rounded-lg border border-solid px-1.5 py-1 min-h-7;
+  border-color: color('transparent');
+  background-color: color('slate-900-a60');
+  @apply cursor-pointer transition-[border-color,box-shadow,background] duration-[120ms] ease-[ease];
+}
+
+@mixin list-item-title {
+  @apply flex-auto min-w-0 text-xs font-semibold truncate;
+  color: color('steel-100');
+}

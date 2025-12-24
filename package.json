@@ -3,8 +3,11 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
+    "clean:angular-cache": "node -e \"require('fs').rmSync('.angular/cache', { recursive: true, force: true })\"",
     "start": "ng serve",
+    "start:clean": "npm run clean:angular-cache && ng serve",
     "build": "ng build",
+    "build:clean": "npm run clean:angular-cache && ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "serve:ssr:pdf-viewer": "node dist/pdf-viewer/server/server.mjs"
@@ -34,7 +37,7 @@
     "express": "^5.1.0",
     "ng2-pdf-viewer": "^10.4.0",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^4.8.69",
+    "pdfjs-dist": "4.8.69",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },
@@ -42,6 +45,7 @@
     "@angular/build": "^20.2.1",
     "@angular/cli": "^20.2.1",
     "@angular/compiler-cli": "^20.2.0",
+    "autoprefixer": "^10.4.20",
     "@types/express": "^5.0.1",
     "@types/jasmine": "~5.1.0",
     "@types/node": "^20.17.19",
@@ -51,6 +55,8 @@
     "karma-coverage": "~2.2.0",
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.1.0",
+    "postcss": "^8.4.45",
+    "tailwindcss": "^3.4.17",
     "typescript": "~5.9.2"
   }
 }
