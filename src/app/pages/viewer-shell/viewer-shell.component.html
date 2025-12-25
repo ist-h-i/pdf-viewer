@@ -113,17 +113,22 @@
             }
             <div class="viewer-shell__pages" #pagesHost (contextmenu)="openContextMenuFromViewer($event)">
               <div class="viewer-shell__pdf-viewer-host" #pdfViewerHost>
-                <pdf-viewer
-                  [src]="pdfSource()"
-                  [show-all]="true"
-                  [render-text]="true"
-                  [original-size]="true"
-                  [fit-to-page]="true"
-                  [autoresize]="true"
-                  [zoom]="pdf.zoom()"
-                  (page-rendered)="onPageRendered($event)"
-                  (text-layer-rendered)="onTextLayerRendered($event)"
-                ></pdf-viewer>
+                <div class="viewer-shell__pdf-pages">
+                  @for (page of pdf.renderedPages(); track page.pageNumber) {
+                    <div class="viewer-shell__pdf-page page" [attr.data-page-number]="page.pageNumber">
+                      <canvas
+                        class="viewer-shell__pdf-canvas"
+                        #pageCanvas
+                        [attr.data-page-number]="page.pageNumber"
+                      ></canvas>
+                      <div
+                        class="viewer-shell__text-layer textLayer"
+                        #pageTextLayer
+                        [attr.data-page-number]="page.pageNumber"
+                      ></div>
+                    </div>
+                  }
+                </div>
               </div>
               <div class="viewer-shell__page-overlays">
                 @for (overlay of pageOverlays(); track trackPageOverlay($index, overlay)) {
@@ -352,17 +357,22 @@
               }
               <div class="viewer-shell__pages" #comparePagesHost>
                 <div class="viewer-shell__pdf-viewer-host" #comparePdfViewerHost>
-                  <pdf-viewer
-                    [src]="comparePdfSource()"
-                    [show-all]="true"
-                    [render-text]="true"
-                    [original-size]="true"
-                    [fit-to-page]="true"
-                    [autoresize]="true"
-                    [zoom]="pdf.zoom()"
-                    (page-rendered)="onComparePageRendered($event)"
-                    (text-layer-rendered)="onCompareTextLayerRendered($event)"
-                  ></pdf-viewer>
+                  <div class="viewer-shell__pdf-pages">
+                    @for (page of compare.compareTargetPages(); track page.pageNumber) {
+                      <div class="viewer-shell__pdf-page page" [attr.data-page-number]="page.pageNumber">
+                        <canvas
+                          class="viewer-shell__pdf-canvas"
+                          #comparePageCanvas
+                          [attr.data-page-number]="page.pageNumber"
+                        ></canvas>
+                        <div
+                          class="viewer-shell__text-layer textLayer"
+                          #comparePageTextLayer
+                          [attr.data-page-number]="page.pageNumber"
+                        ></div>
+                      </div>
+                    }
+                  </div>
                 </div>
                 <div class="viewer-shell__page-overlays">
                   @for (overlay of comparePageOverlays(); track trackPageOverlay($index, overlay)) {

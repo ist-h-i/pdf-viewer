@@ -1,6 +1,6 @@
 import { inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from 'pdfjs-dist';
 import { CompareSummary, PdfPageRender } from '../../core/models';
 import { PDF_WORKER_SRC } from '../../core/pdf-worker';
 import { PdfFacadeService } from '../pdf/pdf-facade.service';
@@ -94,6 +94,57 @@ export class CompareFacadeService {
     await this.renderTargetPages(this.targetDoc);
   }
 
+  async renderComparePageToCanvas(
+    pageNumber: number,
+    canvas: HTMLCanvasElement
+  ): Promise<PageViewport | null> {
+    if (!this.isBrowser) {
+      return null;
+    }
+    const page = await this.getTargetPage(pageNumber);
+    if (!page) {
+      return null;
+    }
+    const viewport = page.getViewport({ scale: this.pdfFacade.getScale() });
+    const outputScale = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) {
+      throw new Error('Canvas is not supported in this environment.');
+    }
+    canvas.width = Math.floor(viewport.width * outputScale);
+    canvas.height = Math.floor(viewport.height * outputScale);
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
+    const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
+    await page.render({ canvasContext: context, viewport, transform }).promise;
+    return viewport;
+  }
+
+  async renderCompareTextLayer(
+    pageNumber: number,
+    container: HTMLElement,
+    viewport: PageViewport
+  ): Promise<void> {
+    if (!this.isBrowser) {
+      return;
+    }
+    const page = await this.getTargetPage(pageNumber);
+    if (!page) {
+      return;
+    }
+    const pdfjs = await this.ensurePdfJs();
+    const textContent = await page.getTextContent();
+    container.innerHTML = '';
+    container.style.width = `${viewport.width}px`;
+    container.style.height = `${viewport.height}px`;
+    const textLayer = new pdfjs.TextLayer({
+      textContentSource: textContent,
+      container,
+      viewport
+    });
+    await textLayer.render();
+  }
+
   private async setTargetDoc(doc: PDFDocumentProxy, source: string): Promise<void> {
     if (this.targetDoc && this.targetDoc !== doc) {
       this.targetDoc.destroy();
@@ -127,6 +178,14 @@ export class CompareFacadeService {
       });
       this.targetPages.set([...rendered]);
     }
+  }
+
+  private async getTargetPage(pageNumber: number): Promise<PDFPageProxy | null> {
+    const doc = this.targetDoc;
+    if (!doc) {
+      return null;
+    }
+    return doc.getPage(pageNumber);
   }
 
   private async collectAllText(doc: PDFDocumentProxy): Promise<string[]> {

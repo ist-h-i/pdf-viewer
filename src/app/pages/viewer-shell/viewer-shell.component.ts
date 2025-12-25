@@ -15,7 +15,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { GlobalWorkerOptions, version as pdfJsVersion } from 'pdfjs-dist';
-import { PdfViewerModule } from 'ng2-pdf-viewer';
+import { Subscription } from 'rxjs';
 import { FEATURE_FLAGS, FeatureFlags } from '../../core/feature-flags';
 import { PDF_WORKER_SRC } from '../../core/pdf-worker';
 import {
@@ -174,7 +174,7 @@ const COMMENT_TITLE_FALLBACK = 'コメントタイトル';
 @Component({
   selector: 'app-viewer-shell',
   standalone: true,
-  imports: [CommonModule, FormsModule, PdfViewerModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './viewer-shell.component.html',
   styleUrl: './viewer-shell.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -182,6 +182,12 @@ const COMMENT_TITLE_FALLBACK = 'コメントタイトル';
 export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   @ViewChildren('commentBody') private commentBodies!: QueryList<ElementRef<HTMLElement>>;
   @ViewChildren('replyTextarea') private replyTextareas!: QueryList<ElementRef<HTMLTextAreaElement>>;
+  @ViewChildren('pageCanvas') private pageCanvases!: QueryList<ElementRef<HTMLCanvasElement>>;
+  @ViewChildren('pageTextLayer') private pageTextLayers!: QueryList<ElementRef<HTMLElement>>;
+  @ViewChildren('comparePageCanvas')
+  private comparePageCanvases!: QueryList<ElementRef<HTMLCanvasElement>>;
+  @ViewChildren('comparePageTextLayer')
+  private comparePageTextLayers!: QueryList<ElementRef<HTMLElement>>;
   @ViewChild('viewerSection') private viewerSection?: ElementRef<HTMLElement>;
   @ViewChild('viewerGrid') private viewerGrid?: ElementRef<HTMLElement>;
   @ViewChild('pagesHost') private pagesHost?: ElementRef<HTMLElement>;
@@ -264,11 +270,24 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   private readonly comparePageElementMap = new Map<number, HTMLElement>();
   private readonly textLayerElementMap = new Map<number, HTMLElement>();
   private readonly renderedTextLayers = new Set<number>();
+  private readonly renderedCanvasPages = new Set<number>();
+  private readonly renderedCompareCanvasPages = new Set<number>();
+  private baseRenderQueue: Promise<void> = Promise.resolve();
+  private compareRenderQueue: Promise<void> = Promise.resolve();
+  private baseRenderToken = 0;
+  private compareRenderToken = 0;
+  private pageRenderSubscription?: Subscription;
+  private compareRenderSubscription?: Subscription;
   private readonly textLayouts = new Map<number, PageTextLayout>();
   private readonly compareTextLayouts = new Map<number, PageTextLayout>();
   private readonly diffHighlights = signal<Record<number, HighlightRect[]>>({});
   private readonly compareDiffHighlights = signal<Record<number, HighlightRect[]>>({});
   private readonly diffCellLimit = 4_000_000;
+  private pdfScrollContainer: HTMLElement | null = null;
+  private compareScrollContainer: HTMLElement | null = null;
+  private pdfScrollRaf: number | null = null;
+  private compareScrollRaf: number | null = null;
+  private isSyncingScroll = false;
   private dragState: DragState | null = null;
   protected readonly isBrowser: boolean;
 
@@ -300,10 +319,158 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   async ngAfterViewInit(): Promise<void> {
     this.syncDomRefs();
     this.syncCompareDomRefs();
+    this.setupPageRendering();
   }
 
   ngOnDestroy(): void {
+    this.teardownScrollListeners();
     this.teardownDragListeners();
+    this.pageRenderSubscription?.unsubscribe();
+    this.compareRenderSubscription?.unsubscribe();
+  }
+
+  private setupPageRendering(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    this.pageRenderSubscription = this.pageCanvases.changes.subscribe(() => {
+      this.queueBaseRender();
+    });
+    this.compareRenderSubscription = this.comparePageCanvases.changes.subscribe(() => {
+      this.queueCompareRender();
+    });
+    this.queueBaseRender();
+    this.queueCompareRender();
+  }
+
+  private queueBaseRender(): void {
+    const token = this.baseRenderToken;
+    this.baseRenderQueue = this.baseRenderQueue
+      .then(() => this.renderBasePages(token))
+      .catch((err) => {
+        console.warn('Failed to render PDF pages.', err);
+      });
+  }
+
+  private queueCompareRender(): void {
+    const token = this.compareRenderToken;
+    this.compareRenderQueue = this.compareRenderQueue
+      .then(() => this.renderComparePages(token))
+      .catch((err) => {
+        console.warn('Failed to render compare PDF pages.', err);
+      });
+  }
+
+  private async renderBasePages(token: number): Promise<void> {
+    if (!this.isBrowser || token !== this.baseRenderToken) {
+      return;
+    }
+    const canvases = this.pageCanvases.toArray();
+    const layers = this.pageTextLayers.toArray();
+    if (!canvases.length) {
+      return;
+    }
+    const layerMap = new Map<number, HTMLElement>();
+    layers.forEach((layerRef) => {
+      const layer = layerRef.nativeElement;
+      const pageNumber = this.readPageNumber(layer);
+      if (pageNumber) {
+        layerMap.set(pageNumber, layer);
+      }
+    });
+
+    for (const canvasRef of canvases) {
+      if (token !== this.baseRenderToken) {
+        return;
+      }
+      const canvas = canvasRef.nativeElement;
+      const pageNumber = this.readPageNumber(canvas);
+      if (!pageNumber || this.renderedCanvasPages.has(pageNumber)) {
+        continue;
+      }
+      const pageElement = canvas.closest('.page') as HTMLElement | null;
+      const viewport = await this.pdf.renderPageToCanvas(pageNumber, canvas);
+      if (token !== this.baseRenderToken) {
+        return;
+      }
+      if (!viewport) {
+        continue;
+      }
+      const layer = layerMap.get(pageNumber);
+      if (layer) {
+        const layout = await this.pdf.renderTextLayer(
+          pageNumber,
+          layer,
+          pageElement ?? undefined,
+          viewport
+        );
+        if (token !== this.baseRenderToken) {
+          return;
+        }
+        this.textLayerElementMap.set(pageNumber, layer);
+        if (layout) {
+          this.textLayouts.set(pageNumber, layout);
+          this.renderedTextLayers.add(pageNumber);
+        }
+        this.updateDiffHighlightsForPage(pageNumber);
+      }
+      this.renderedCanvasPages.add(pageNumber);
+    }
+
+    this.syncDomRefs();
+  }
+
+  private async renderComparePages(token: number): Promise<void> {
+    if (!this.isBrowser || token !== this.compareRenderToken) {
+      return;
+    }
+    const canvases = this.comparePageCanvases.toArray();
+    const layers = this.comparePageTextLayers.toArray();
+    if (!canvases.length) {
+      return;
+    }
+    const layerMap = new Map<number, HTMLElement>();
+    layers.forEach((layerRef) => {
+      const layer = layerRef.nativeElement;
+      const pageNumber = this.readPageNumber(layer);
+      if (pageNumber) {
+        layerMap.set(pageNumber, layer);
+      }
+    });
+
+    for (const canvasRef of canvases) {
+      if (token !== this.compareRenderToken) {
+        return;
+      }
+      const canvas = canvasRef.nativeElement;
+      const pageNumber = this.readPageNumber(canvas);
+      if (!pageNumber || this.renderedCompareCanvasPages.has(pageNumber)) {
+        continue;
+      }
+      const pageElement = canvas.closest('.page') as HTMLElement | null;
+      const viewport = await this.compare.renderComparePageToCanvas(pageNumber, canvas);
+      if (token !== this.compareRenderToken) {
+        return;
+      }
+      if (!viewport) {
+        continue;
+      }
+      const layer = layerMap.get(pageNumber);
+      if (layer) {
+        await this.compare.renderCompareTextLayer(pageNumber, layer, viewport);
+        if (token !== this.compareRenderToken) {
+          return;
+        }
+        const layout = this.captureTextLayoutFromDom(pageNumber, layer, pageElement ?? undefined);
+        if (layout) {
+          this.compareTextLayouts.set(pageNumber, layout);
+        }
+        this.updateDiffHighlightsForPage(pageNumber);
+      }
+      this.renderedCompareCanvasPages.add(pageNumber);
+    }
+
+    this.syncCompareDomRefs();
   }
 
   protected onPageRendered(_event: CustomEvent): void {
@@ -802,6 +969,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     await this.pdf.loadFile(file);
     await this.loadPdfAnnotations();
     this.selectedOcrPage.set(1);
+    this.queueBaseRender();
   }
 
   private async loadPdfAnnotations(): Promise<void> {
@@ -834,6 +1002,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.resetCompareViewState();
     await this.compare.compareWith(file);
     this.updateAllDiffHighlights();
+    this.queueCompareRender();
     input.value = '';
   }
 
@@ -1248,12 +1417,15 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
 
   private resetViewState(): void {
     this.renderedTextLayers.clear();
+    this.renderedCanvasPages.clear();
+    this.baseRenderToken += 1;
     this.pageElementMap.clear();
     this.textLayerElementMap.clear();
     this.textLayouts.clear();
     this.pageOverlays.set([]);
     this.ocrActionMessage.set('');
     this.resetCompareViewState();
+    this.isSyncingScroll = false;
     this.dragState = null;
     this.teardownDragListeners();
     this.closeContextMenu();
@@ -1277,14 +1449,19 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   private resetCompareViewState(): void {
     this.comparePageElementMap.clear();
     this.compareTextLayouts.clear();
+    this.renderedCompareCanvasPages.clear();
+    this.compareRenderToken += 1;
     this.comparePageOverlays.set([]);
     this.clearDiffHighlights();
+    this.clearScrollContainer('compare');
   }
 
   private async applyZoomChange(action: () => Promise<void> | void): Promise<void> {
     this.resetViewState();
     await action();
     await this.compare.refreshTargetPages();
+    this.queueBaseRender();
+    this.queueCompareRender();
   }
 
   private normalizeCoordinates(
@@ -1309,6 +1486,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     window.removeEventListener('pointerup', this.stopDragging);
     window.removeEventListener('pointercancel', this.stopDragging);
   }
+
+  private handlePdfScroll = (): void => {
+    this.scheduleScrollSync('base');
+  };
+
+  private handleCompareScroll = (): void => {
+    this.scheduleScrollSync('compare');
+  };
 
   private handlePointerMove = (event: PointerEvent): void => {
     if (!this.dragState) {
@@ -1478,7 +1663,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
 
   private scrollMarkerIntoView(marker: Marker): void {
     const rect = this.resolveMarkerClientRect(marker);
-    if (this.scrollViewerToRect(rect)) {
+    const scrollContainer =
+      this.pdfScrollContainer ?? this.resolveScrollContainer(this.pdfViewerHost?.nativeElement);
+    if (this.scrollViewerToRect(rect, scrollContainer)) {
       return;
     }
     this.scrollToPage(marker.page);
@@ -1486,7 +1673,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
 
   private scrollCommentIntoView(comment: CommentCard): void {
     const rect = this.resolveCommentBubbleRect(comment);
-    if (this.scrollViewerToRect(rect)) {
+    const scrollContainer =
+      this.pdfScrollContainer ?? this.resolveScrollContainer(this.pdfViewerHost?.nativeElement);
+    if (this.scrollViewerToRect(rect, scrollContainer)) {
       return;
     }
     this.scrollToPage(comment.page);
@@ -1603,7 +1792,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       return false;
     }
     const rect = pageElement.getBoundingClientRect();
-    if (this.scrollViewerToRect(rect)) {
+    const scrollContainer =
+      this.pdfScrollContainer ?? this.resolveScrollContainer(this.pdfViewerHost?.nativeElement);
+    if (this.scrollViewerToRect(rect, scrollContainer)) {
       return true;
     }
     pageElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
@@ -1620,18 +1811,24 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       return false;
     }
     const rect = pageElement.getBoundingClientRect();
-    if (this.scrollViewerToRect(rect)) {
+    const scrollContainer =
+      this.compareScrollContainer ??
+      this.resolveScrollContainer(this.comparePdfViewerHost?.nativeElement);
+    if (this.scrollViewerToRect(rect, scrollContainer)) {
       return true;
     }
     pageElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
     return true;
   }
 
-  private scrollViewerToRect(rect: DOMRect | null): boolean {
+  private scrollViewerToRect(
+    rect: DOMRect | null,
+    containerOverride?: HTMLElement | null
+  ): boolean {
     if (!this.isBrowser) {
       return false;
     }
-    const container = this.viewerGrid?.nativeElement;
+    const container = containerOverride ?? this.viewerGrid?.nativeElement;
     if (!container || !rect) {
       return false;
     }
@@ -1641,6 +1838,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     }
     const maxScrollLeft = Math.max(container.scrollWidth - container.clientWidth, 0);
     const maxScrollTop = Math.max(container.scrollHeight - container.clientHeight, 0);
+    if (maxScrollLeft === 0 && maxScrollTop === 0) {
+      return false;
+    }
     const targetCenterX =
       rect.left - containerRect.left - container.clientLeft + container.scrollLeft + rect.width / 2;
     const targetCenterY =
@@ -1660,28 +1860,183 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
 
   private syncDomRefs(): void {
     this.pageElementMap.clear();
+    this.bindScrollContainer('base');
+    const scrollOffsets = this.getScrollOffsets(this.pdfScrollContainer);
     const overlays = this.buildPageOverlays(
       this.pdfViewerHost?.nativeElement,
       this.pagesHost?.nativeElement,
-      this.pageElementMap
+      this.pageElementMap,
+      scrollOffsets
     );
     this.pageOverlays.set(overlays);
   }
 
   private syncCompareDomRefs(): void {
     this.comparePageElementMap.clear();
+    this.bindScrollContainer('compare');
+    const scrollOffsets = this.getScrollOffsets(this.compareScrollContainer);
     const overlays = this.buildPageOverlays(
       this.comparePdfViewerHost?.nativeElement,
       this.comparePagesHost?.nativeElement,
-      this.comparePageElementMap
+      this.comparePageElementMap,
+      scrollOffsets
     );
     this.comparePageOverlays.set(overlays);
+  }
+
+  private bindScrollContainer(kind: 'base' | 'compare'): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    const viewerHost =
+      kind === 'base' ? this.pdfViewerHost?.nativeElement : this.comparePdfViewerHost?.nativeElement;
+    const pagesHost =
+      kind === 'base' ? this.pagesHost?.nativeElement : this.comparePagesHost?.nativeElement;
+    const container = this.resolveScrollContainer(viewerHost);
+    const current = kind === 'base' ? this.pdfScrollContainer : this.compareScrollContainer;
+    const handler = kind === 'base' ? this.handlePdfScroll : this.handleCompareScroll;
+
+    if (current && current !== container) {
+      current.removeEventListener('scroll', handler);
+    }
+    if (container && container !== current) {
+      container.addEventListener('scroll', handler, { passive: true });
+    }
+
+    if (kind === 'base') {
+      this.pdfScrollContainer = container;
+    } else {
+      this.compareScrollContainer = container;
+    }
+
+    if (container) {
+      this.updateScrollOffsets(container, pagesHost);
+    }
+    if (
+      kind === 'compare' &&
+      this.isCompareActive() &&
+      this.pdfScrollContainer &&
+      this.compareScrollContainer
+    ) {
+      this.syncScrollPositions('base');
+    }
+  }
+
+  private clearScrollContainer(kind: 'base' | 'compare'): void {
+    const container = kind === 'base' ? this.pdfScrollContainer : this.compareScrollContainer;
+    const handler = kind === 'base' ? this.handlePdfScroll : this.handleCompareScroll;
+    if (container) {
+      container.removeEventListener('scroll', handler);
+    }
+    if (kind === 'base') {
+      this.pdfScrollContainer = null;
+      if (this.pdfScrollRaf !== null && this.isBrowser) {
+        cancelAnimationFrame(this.pdfScrollRaf);
+      }
+      this.pdfScrollRaf = null;
+    } else {
+      this.compareScrollContainer = null;
+      if (this.compareScrollRaf !== null && this.isBrowser) {
+        cancelAnimationFrame(this.compareScrollRaf);
+      }
+      this.compareScrollRaf = null;
+    }
+  }
+
+  private resolveScrollContainer(viewerHost: HTMLElement | undefined): HTMLElement | null {
+    if (!viewerHost) {
+      return null;
+    }
+    const custom = viewerHost.querySelector('.viewer-shell__pdf-scroll') as HTMLElement | null;
+    if (custom) {
+      return custom;
+    }
+    const legacy = viewerHost.querySelector('.ng2-pdf-viewer-container') as HTMLElement | null;
+    return legacy ?? viewerHost;
+  }
+
+  private getScrollOffsets(container: HTMLElement | null): { left: number; top: number } {
+    if (!container) {
+      return { left: 0, top: 0 };
+    }
+    return { left: container.scrollLeft, top: container.scrollTop };
+  }
+
+  private updateScrollOffsets(container: HTMLElement, pagesHost: HTMLElement | undefined): void {
+    if (!pagesHost) {
+      return;
+    }
+    pagesHost.style.setProperty('--pdf-scroll-left', `${container.scrollLeft}px`);
+    pagesHost.style.setProperty('--pdf-scroll-top', `${container.scrollTop}px`);
+  }
+
+  private scheduleScrollSync(kind: 'base' | 'compare'): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    const container = kind === 'base' ? this.pdfScrollContainer : this.compareScrollContainer;
+    const pagesHost =
+      kind === 'base' ? this.pagesHost?.nativeElement : this.comparePagesHost?.nativeElement;
+    if (!container || !pagesHost) {
+      return;
+    }
+    const currentRaf = kind === 'base' ? this.pdfScrollRaf : this.compareScrollRaf;
+    if (currentRaf !== null) {
+      return;
+    }
+    const rafId = requestAnimationFrame(() => {
+      if (kind === 'base') {
+        this.pdfScrollRaf = null;
+      } else {
+        this.compareScrollRaf = null;
+      }
+      this.updateScrollOffsets(container, pagesHost);
+      if (!this.isSyncingScroll) {
+        this.syncScrollPositions(kind);
+      }
+    });
+    if (kind === 'base') {
+      this.pdfScrollRaf = rafId;
+    } else {
+      this.compareScrollRaf = rafId;
+    }
+  }
+
+  private syncScrollPositions(source: 'base' | 'compare'): void {
+    if (!this.isCompareActive()) {
+      return;
+    }
+    const sourceContainer = source === 'base' ? this.pdfScrollContainer : this.compareScrollContainer;
+    const targetContainer = source === 'base' ? this.compareScrollContainer : this.pdfScrollContainer;
+    const targetPagesHost =
+      source === 'base' ? this.comparePagesHost?.nativeElement : this.pagesHost?.nativeElement;
+    if (!sourceContainer || !targetContainer) {
+      return;
+    }
+    this.isSyncingScroll = true;
+    targetContainer.scrollLeft = sourceContainer.scrollLeft;
+    targetContainer.scrollTop = sourceContainer.scrollTop;
+    this.updateScrollOffsets(targetContainer, targetPagesHost);
+    requestAnimationFrame(() => {
+      this.isSyncingScroll = false;
+    });
+  }
+
+  private isCompareActive(): boolean {
+    return this.flags.compare && Boolean(this.compare.compareTargetSource());
+  }
+
+  private teardownScrollListeners(): void {
+    this.clearScrollContainer('base');
+    this.clearScrollContainer('compare');
+    this.isSyncingScroll = false;
   }
 
   private buildPageOverlays(
     viewerHost: HTMLElement | undefined,
     pagesHost: HTMLElement | undefined,
-    pageMap: Map<number, HTMLElement>
+    pageMap: Map<number, HTMLElement>,
+    scrollOffsets: { left: number; top: number }
   ): PageOverlay[] {
     const pageElements = this.collectPdfPageElements(viewerHost);
     pageElements.forEach((pageElement) => {
@@ -1708,8 +2063,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
         pageNumber,
         width: rect.width,
         height: rect.height,
-        left: rect.left - hostRect.left,
-        top: rect.top - hostRect.top
+        left: rect.left - hostRect.left + scrollOffsets.left,
+        top: rect.top - hostRect.top + scrollOffsets.top
       });
     });
     overlays.sort((a, b) => a.pageNumber - b.pageNumber);

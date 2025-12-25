@@ -76,15 +76,15 @@
     // search highlight color
     --color-highlight-search: #ffeb3b;
     // highlight swatch option (pink)
-    --color-highlight-pink: rgba(255, 192, 203, 0.45);
+    --color-highlight-pink: rgba(255, 192, 203, 0.6);
     // highlight swatch option (yellow)
-    --color-highlight-yellow: rgba(254, 240, 138, 0.45);
+    --color-highlight-yellow: rgba(254, 240, 138, 0.6);
     // highlight swatch option (green)
-    --color-highlight-green: rgba(134, 239, 172, 0.45);
+    --color-highlight-green: rgba(134, 239, 172, 0.6);
     // highlight swatch option (blue)
-    --color-highlight-blue: rgba(147, 197, 253, 0.45);
+    --color-highlight-blue: rgba(147, 197, 253, 0.6);
     // highlight swatch option (orange)
-    --color-highlight-orange: rgba(253, 186, 116, 0.45);
+    --color-highlight-orange: rgba(253, 186, 116, 0.6);
 
     // soft shadow for pages/highlights/overlays
     --color-black-a35: rgba(0, 0, 0, 0.35);
@@ -155,6 +155,8 @@
     --color-blue-600-a60: rgba(37, 99, 235, 0.6);
     // text selection highlight and comment count border
     --color-blue-500-a35: rgba(59, 130, 246, 0.35);
+    // text selection highlight (stronger)
+    --color-blue-500-a45: rgba(59, 130, 246, 0.45);
     // top bar accent glow
     --color-indigo-600-a35: rgba(79, 70, 229, 0.35);
     // comment glow shadow
