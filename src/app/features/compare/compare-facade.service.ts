@@ -1,6 +1,6 @@
 import { inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
-import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { CompareSummary, PdfPageRender } from '../../core/models';
 import { PDF_WORKER_SRC } from '../../core/pdf-worker';
 import { PdfFacadeService } from '../pdf/pdf-facade.service';
@@ -58,9 +58,10 @@ export class CompareFacadeService {
     try {
       const pdfjs = await this.ensurePdfJs();
       const buffer = await file.arrayBuffer();
-      // Keep a stable copy for display; pdf.js transfers (detaches) its input buffer.
-      const sourceBuffer = buffer.slice(0);
-      const targetDoc = await pdfjs.getDocument({ data: buffer }).promise;
+      // Keep a stable buffer for display; pdf.js transfers (detaches) its input buffer.
+      const sourceBuffer = buffer;
+      const workerBuffer = buffer.slice(0);
+      const targetDoc = await pdfjs.getDocument({ data: workerBuffer }).promise;
       const sourceUrl = this.createObjectUrl(sourceBuffer, file.type);
       await this.setTargetDoc(targetDoc, sourceUrl);
       const targetTexts = await this.collectAllText(targetDoc);

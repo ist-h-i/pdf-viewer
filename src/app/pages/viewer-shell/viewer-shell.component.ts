@@ -749,7 +749,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (event.button !== 0) {
       return;
     }
-    const bubbleElement = (event.target as HTMLElement).closest('.comment-bubble') as HTMLElement | null;
+    const bubbleElement = (event.target as HTMLElement).closest(
+      '.viewer-shell__comment-bubble'
+    ) as HTMLElement | null;
     if (!bubbleElement) {
       return;
     }
@@ -1497,7 +1499,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     const domRects: DOMRect[] = [];
     document
       .querySelectorAll<HTMLElement>(
-        `.highlight[data-marker-id="${marker.id}"], .highlight-label[data-marker-id="${marker.id}"]`
+        `.viewer-shell__page-highlight[data-marker-id="${marker.id}"], .viewer-shell__page-highlight-label[data-marker-id="${marker.id}"]`
       )
       .forEach((node) => {
         const rect = node.getBoundingClientRect();
@@ -1535,7 +1537,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       return null;
     }
     const bubble = document.querySelector<HTMLElement>(
-      `.comment-bubble[data-comment-id="${comment.id}"]`
+      `.viewer-shell__comment-bubble[data-comment-id="${comment.id}"]`
     );
     if (bubble) {
       return bubble.getBoundingClientRect();

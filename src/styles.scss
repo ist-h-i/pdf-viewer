@@ -1,6 +1,11 @@
 @use './styles/colors' as colors;
+@use './styles/mixins' as mixins;
 
 @import 'pdfjs-dist/web/pdf_viewer.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 @include colors.define-color-vars();
 
@@ -9,23 +14,20 @@
 *,
 *::before,
 *::after {
-  box-sizing: border-box;
+  @apply box-border;
 }
 
 :root {
-  background-color: var(--color-ink-950);
+  background-color: mixins.color('ink-950');
 }
 
 html,
 body {
-  margin: 0;
-  width: 100%;
-  min-height: 100%;
-  overflow: hidden;
-  background-color: var(--color-ink-950);
+  @apply m-0 w-full min-h-full overflow-hidden;
+  background-color: mixins.color('ink-950');
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  color: var(--color-steel-100);
+  font-family: mixins.$font-sans;
+  color: mixins.color('steel-100');
 }
