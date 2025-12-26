@@ -193,7 +193,7 @@
 }
 
 .viewer-shell__viewer-grid {
-  @apply grid flex-1 min-h-0 min-w-0 gap-4 overflow-hidden grid-cols-1 items-stretch overscroll-contain;
+  @apply grid flex-1 min-h-0 min-w-0 gap-4 overflow-auto grid-cols-1 items-stretch overscroll-contain;
 }
 
 .viewer-shell__viewer-grid--compare {
