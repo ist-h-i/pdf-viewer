@@ -225,11 +225,52 @@
 }
 
 .viewer-shell__pdf-viewer-host {
-  @apply relative z-[1];
+  @apply relative z-[1] h-full min-h-0 overflow-auto overscroll-contain;
+}
+
+.viewer-shell__pdf-pages {
+  @apply flex flex-col items-center gap-[18px] py-3;
+}
+
+.viewer-shell__pdf-page {
+  @apply relative overflow-hidden rounded-[10px] border border-solid;
+  background-color: mixins.color('gray-900');
+  border-color: mixins.color('gray-800');
+  box-shadow: 0 10px 25px mixins.color('black-a35');
+}
+
+.viewer-shell__pdf-canvas {
+  @apply block max-w-full;
+}
+
+.viewer-shell__text-layer {
+  @apply absolute inset-0 select-text overflow-hidden;
+  color: transparent;
+  line-height: 1;
+  transform-origin: 0 0;
+}
+
+.viewer-shell__text-layer span {
+  @apply absolute whitespace-pre;
+  transform-origin: 0% 0%;
+  cursor: text;
+  line-height: 1;
+}
+
+.viewer-shell__text-layer ::selection {
+  background-color: mixins.color('blue-500-a45');
+}
+
+.viewer-shell__text-layer .text-highlight {
+  @apply rounded-sm box-decoration-clone;
 }
 
 .viewer-shell__page-overlays {
   @apply absolute inset-0 pointer-events-none z-[4];
+  transform: translate(
+    calc(-1 * var(--pdf-scroll-left, 0px)),
+    calc(-1 * var(--pdf-scroll-top, 0px))
+  );
 }
 
 .viewer-shell__page-overlay {
@@ -249,44 +290,6 @@
   background-color: mixins.color('amber-700-a35');
 }
 
-pdf-viewer {
-  @apply w-full block;
-  @apply [--pdfViewer-padding-bottom:0];
-  @apply [--page-margin:0];
-  @apply [--page-border:0];
-  @apply [--page-border-image:none];
-  @apply [--spreadHorizontalWrapped-margin-LR:0];
-}
-
-:host ::ng-deep pdf-viewer .ng2-pdf-viewer-container,
-:host ::ng-deep pdf-viewer .pdfViewer {
-  @apply w-full h-full block;
-}
-
-:host ::ng-deep pdf-viewer .ng2-pdf-viewer-container {
-  @apply relative overflow-visible;
-  min-height: 100%;
-}
-
-:host ::ng-deep pdf-viewer .pdfViewer .page {
-  @apply relative overflow-hidden rounded-[10px] border border-solid mt-0 mx-auto mb-[18px];
-  background-color: mixins.color('gray-900');
-  border-color: mixins.color('gray-800');
-  box-shadow: 0 10px 25px mixins.color('black-a35');
-}
-
-:host ::ng-deep pdf-viewer .textLayer {
-  opacity: 1 !important;
-}
-
-:host ::ng-deep pdf-viewer .textLayer ::selection {
-  background-color: mixins.color('blue-500-a35');
-}
-
-:host ::ng-deep pdf-viewer .textLayer .text-highlight {
-  @apply rounded-sm box-decoration-clone;
-}
-
 .viewer-shell__diff-highlight {
   @apply absolute pointer-events-none z-[2] mix-blend-multiply border border-solid rounded;
   @include mixins.rect-vars(--diff-left, --diff-top, --diff-width, --diff-height, 0%);
@@ -295,11 +298,21 @@ pdf-viewer {
 }
 
 .viewer-shell__page-highlight {
-  @apply absolute border border-solid rounded-md pointer-events-auto z-[2] cursor-pointer select-none mix-blend-multiply opacity-[0.45];
+  @apply absolute rounded-md pointer-events-auto z-[2] cursor-pointer select-none;
   @include mixins.rect-vars(--marker-left, --marker-top, --marker-width, --marker-height, 0%);
+  background-color: transparent;
+  @apply transition-[opacity,box-shadow,transform] duration-[120ms] ease-[ease];
+}
+
+.viewer-shell__page-highlight::before {
+  content: '';
+  @apply absolute inset-x-0 pointer-events-none mix-blend-multiply opacity-[0.65];
+  --marker-trim-y: clamp(1px, 18%, 6px);
+  top: var(--marker-trim-y);
+  bottom: var(--marker-trim-y);
+  @apply border border-solid rounded-md;
   border-color: var(--marker-color, mixins.color('transparent'));
   background-color: var(--marker-color, mixins.color('highlight-default'));
-  @apply transition-[opacity,box-shadow,transform] duration-[120ms] ease-[ease];
 }
 
 .viewer-shell__page-highlight--draggable {
@@ -311,7 +324,11 @@ pdf-viewer {
 }
 
 .viewer-shell__page-highlight--selected {
-  @apply opacity-90 mix-blend-normal transform-gpu;
+  @apply transform-gpu;
+}
+
+.viewer-shell__page-highlight--selected::before {
+  @apply opacity-90 mix-blend-normal;
   border-color: var(--highlight-strong, mixins.color('white-a75'));
   box-shadow: 0 0 0 2px var(--highlight-strong, mixins.color('white-a60')),
     0 6px 20px mixins.color('black-a35');
