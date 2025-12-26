@@ -1,5 +1,5 @@
+@use '../../../styles/colors';
 @use '../../../styles/mixins';
-
 :host {
   @apply block min-h-screen overflow-hidden;
   background-color: mixins.color('ink-950');
