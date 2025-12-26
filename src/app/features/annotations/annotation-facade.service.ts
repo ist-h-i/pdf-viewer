@@ -189,12 +189,48 @@ export class AnnotationFacadeService {
     this.searchHighlights.set(markers);
   }
 
+  snapshotUserAnnotations(): { userMarkers: Marker[]; userComments: CommentCard[] } {
+    return {
+      userMarkers: this.cloneMarkers(this.selectionHighlights()),
+      userComments: this.cloneComments(this.comments())
+    };
+  }
+
+  restoreUserAnnotations(
+    snapshot: { userMarkers: Marker[]; userComments: CommentCard[] } | null
+  ): void {
+    this.setUserMarkers(snapshot?.userMarkers ?? []);
+    this.setUserComments(snapshot?.userComments ?? []);
+  }
+
+  setUserMarkers(markers: Marker[]): void {
+    this.selectionHighlights.set(this.cloneMarkers(markers));
+  }
+
+  setUserComments(comments: CommentCard[]): void {
+    this.comments.set(this.cloneComments(comments));
+  }
+
   setImportedMarkers(markers: Marker[]): void {
     this.importedMarkers.set(markers);
   }
 
   setImportedComments(comments: CommentCard[]): void {
     this.importedComments.set(comments);
+  }
+
+  private cloneMarkers(markers: Marker[]): Marker[] {
+    return markers.map((marker) => ({
+      ...marker,
+      rects: marker.rects.map((rect) => ({ ...rect }))
+    }));
+  }
+
+  private cloneComments(comments: CommentCard[]): CommentCard[] {
+    return comments.map((comment) => ({
+      ...comment,
+      messages: comment.messages.map((message) => ({ ...message }))
+    }));
   }
 
   private clamp01(value: number): number {

@@ -64,7 +64,7 @@
 }
 
 .viewer-shell__toolbar {
-  @apply flex flex-1 items-center justify-between gap-2 px-4 py-2.5 border border-solid rounded-xl;
+  @apply flex flex-1 flex-wrap items-center justify-between gap-2 px-4 py-2.5 border border-solid rounded-xl;
   @apply min-w-[320px];
   background-image: linear-gradient(120deg, mixins.color('slate-800-a95'), mixins.color('slate-900-a85'));
   border-color: mixins.color('slate-400-a25');
@@ -74,6 +74,38 @@
 
 .viewer-shell__toolbar-group {
   @apply flex flex-wrap items-center gap-2;
+}
+
+.viewer-shell__toolbar-group--page-jump {
+  @apply flex-col items-stretch gap-1.5;
+}
+
+.viewer-shell__page-jump {
+  @apply flex items-center gap-2;
+}
+
+.viewer-shell__page-input {
+  @include mixins.field-base;
+  @apply w-[72px] text-center text-sm font-semibold;
+  background-color: mixins.color('slate-900-a70');
+  border-color: mixins.color('slate-400-a35');
+  color: mixins.color('steel-100');
+}
+
+.viewer-shell__page-input:focus {
+  @apply outline-none;
+  border-color: mixins.color('blue-600-a50');
+  box-shadow: 0 0 0 1px mixins.color('blue-600-a35');
+}
+
+.viewer-shell__page-total {
+  @apply text-xs font-semibold;
+  color: mixins.color('steel-200');
+}
+
+.viewer-shell__page-slider {
+  @apply w-full;
+  accent-color: mixins.color('blue-400');
 }
 
 .viewer-shell__zoom-indicator {
@@ -203,14 +235,39 @@
   }
 }
 
+@keyframes viewerShellShimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
 .viewer-shell__layout {
   @apply grid flex-1 min-h-0 gap-4;
   @apply grid-cols-[2fr_1fr] grid-rows-[minmax(0,1fr)] auto-rows-[minmax(0,1fr)];
 }
 
 .viewer-shell__viewer {
-  @apply flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden p-[clamp(8px,1.2vw,16px)];
+  @apply relative flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden p-[clamp(8px,1.2vw,16px)];
   @include mixins.surface(mixins.color('ink-900'), mixins.color('gray-800'), 12px);
+}
+
+.viewer-shell__drag-overlay {
+  @apply absolute inset-0 z-[15] flex items-center justify-center pointer-events-none;
+  border: 2px dashed mixins.color('blue-400-a70');
+  background-color: mixins.color('blue-600-a10');
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px mixins.color('blue-500-a35');
+}
+
+.viewer-shell__drag-overlay-content {
+  @apply rounded-xl border border-solid px-4 py-3 text-sm font-semibold;
+  border-color: mixins.color('blue-400-a60');
+  background-color: mixins.color('ink-900-a90');
+  color: mixins.color('blue-200');
+  box-shadow: 0 12px 24px mixins.color('black-a40');
 }
 
 .viewer-shell__viewer-grid {
@@ -673,6 +730,115 @@
   background-color: mixins.color('slate-900');
   border-color: mixins.color('gray-800');
   box-shadow: 0 12px 28px mixins.color('black-a45');
+}
+
+.viewer-shell__library-overlay {
+  @apply fixed inset-0 z-30 flex items-center justify-center p-6;
+  background-color: mixins.color('black-a60');
+  backdrop-filter: blur(6px);
+}
+
+.viewer-shell__library-dialog {
+  @apply w-full max-w-[980px] max-h-[82vh] overflow-hidden border border-solid rounded-2xl;
+  @apply flex flex-col;
+  background-image: linear-gradient(140deg, mixins.color('slate-900'), mixins.color('ink-900'));
+  border-color: mixins.color('slate-400-a40');
+  box-shadow: 0 35px 70px mixins.color('black-a55');
+}
+
+.viewer-shell__library-header {
+  @apply flex items-center justify-between gap-4 px-5 py-4 border-b border-solid;
+  border-color: mixins.color('slate-400-a25');
+  background-color: mixins.color('slate-900-a70');
+}
+
+.viewer-shell__library-heading {
+  @apply flex items-baseline gap-3;
+}
+
+.viewer-shell__library-title {
+  @apply m-0 text-lg font-bold;
+  color: mixins.color('steel-100');
+}
+
+.viewer-shell__library-count {
+  @apply text-xs font-semibold;
+  color: mixins.color('steel-300');
+}
+
+.viewer-shell__library-content {
+  @apply flex-1 overflow-auto;
+}
+
+.viewer-shell__library-grid {
+  @apply grid gap-4 p-5;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.viewer-shell__library-card {
+  @apply flex flex-col gap-2 rounded-xl border border-solid p-3 text-left cursor-pointer;
+  background-color: mixins.color('slate-900-a70');
+  border-color: mixins.color('slate-400-a25');
+  @apply transition-[border-color,box-shadow,transform] duration-[160ms] ease-[ease];
+}
+
+.viewer-shell__library-card:hover {
+  border-color: mixins.color('blue-400-a60');
+  box-shadow: 0 18px 28px mixins.color('black-a45');
+  transform: translateY(-2px);
+}
+
+.viewer-shell__library-card--selected {
+  border-color: mixins.color('blue-400');
+  box-shadow: 0 0 0 1px mixins.color('blue-400-a45'), 0 18px 32px mixins.color('black-a45');
+}
+
+.viewer-shell__library-card:focus-visible {
+  @include mixins.focus-ring(mixins.color('blue-300'));
+}
+
+.viewer-shell__library-thumb {
+  @apply relative w-full overflow-hidden rounded-lg border border-solid;
+  aspect-ratio: 3 / 4;
+  background-color: mixins.color('slate-900');
+  border-color: mixins.color('slate-400-a20');
+}
+
+.viewer-shell__library-thumb img {
+  @apply h-full w-full object-cover;
+}
+
+.viewer-shell__library-thumb-skeleton {
+  @apply absolute inset-0;
+  background-image: linear-gradient(
+    100deg,
+    mixins.color('slate-800-a35'),
+    mixins.color('slate-700-a55'),
+    mixins.color('slate-800-a35')
+  );
+  background-size: 200% 100%;
+  animation: viewerShellShimmer 1.2s ease-in-out infinite;
+}
+
+.viewer-shell__library-thumb-placeholder {
+  @apply flex h-full w-full items-center justify-center text-sm font-semibold;
+  color: mixins.color('steel-200');
+  background-color: mixins.color('slate-900-a70');
+}
+
+.viewer-shell__library-meta {
+  @apply flex flex-col gap-1;
+}
+
+.viewer-shell__library-name {
+  @apply text-sm font-semibold;
+  color: mixins.color('steel-100');
+  @include mixins.text-ellipsis;
+}
+
+.viewer-shell__library-pages {
+  @apply text-xs font-semibold;
+  color: mixins.color('steel-300');
 }
 
 .viewer-shell__highlight-swatches {

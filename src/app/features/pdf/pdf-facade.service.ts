@@ -17,6 +17,7 @@ import { PDF_WORKER_SRC } from '../../core/pdf-worker';
 type PdfDownloadOptions = {
   includeAnnotations?: boolean;
   annotations?: PdfAnnotationExport;
+  fileNameOverride?: string;
 };
 
 type PdfJsAnnotationData = {
@@ -71,10 +72,14 @@ export class PdfFacadeService {
   readonly lastError = this.error.asReadonly();
   readonly pdfName = this.currentName.asReadonly();
 
-  async loadFile(file: File): Promise<void> {
+  setUserError(message: string | null): void {
+    this.error.set(message);
+  }
+
+  async loadBytes(bytes: ArrayBuffer, name: string, mimeType = 'application/pdf'): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
-    this.currentName.set(file.name);
+    this.currentName.set(name);
     this.revokeSourceUrl();
     this.originalFileBytes = null;
     this.currentSourceUrl = null;
@@ -87,14 +92,13 @@ export class PdfFacadeService {
       this.textCache.clear();
       this.textLayouts.clear();
       this.pages.set([]);
-      const buffer = await file.arrayBuffer();
       // Keep a stable buffer for viewer/download; pdf.js transfers (detaches) its input buffer.
-      const sourceBuffer = buffer;
-      const workerBuffer = buffer.slice(0);
+      const sourceBuffer = bytes;
+      const workerBuffer = bytes.slice(0);
       this.originalFileBytes = sourceBuffer;
       const pdfjs = await this.ensurePdfJs();
       const doc = await pdfjs.getDocument({ data: workerBuffer }).promise;
-      nextSourceUrl = this.createObjectUrl(sourceBuffer, file.type);
+      nextSourceUrl = this.createObjectUrl(sourceBuffer, mimeType);
       this.currentSourceUrl = nextSourceUrl;
       this.pdfDoc.set(doc);
       await this.renderAllPages(doc);
@@ -107,6 +111,16 @@ export class PdfFacadeService {
       this.error.set(message);
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  async loadFile(file: File): Promise<void> {
+    try {
+      const buffer = await file.arrayBuffer();
+      await this.loadBytes(buffer, file.name, file.type);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load PDF.';
+      this.error.set(message);
     }
   }
 
@@ -194,7 +208,7 @@ export class PdfFacadeService {
     if (!this.isBrowser || !this.originalFileBytes) {
       return;
     }
-    const fileName = this.currentName() ?? 'document.pdf';
+    const fileName = options?.fileNameOverride ?? this.currentName() ?? 'document.pdf';
     const includeAnnotations = options?.includeAnnotations ?? true;
     const annotations = options?.annotations;
     if (

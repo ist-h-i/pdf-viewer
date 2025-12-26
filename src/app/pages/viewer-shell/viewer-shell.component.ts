@@ -36,6 +36,7 @@ import { SearchFacadeService } from '../../features/search/search-facade.service
 import { AnnotationFacadeService } from '../../features/annotations/annotation-facade.service';
 import { OcrFacadeService } from '../../features/ocr/ocr-facade.service';
 import { CompareFacadeService } from '../../features/compare/compare-facade.service';
+import { PdfLibraryFacadeService } from '../../features/library/pdf-library-facade.service';
 
 type ContextMenuState = {
   visible: boolean;
@@ -198,6 +199,10 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   protected readonly searchQuery = signal('');
   protected readonly ocrScope = signal<OcrScope>('page');
   protected readonly selectedOcrPage = signal(1);
+  protected readonly currentPage = signal(1);
+  protected readonly pageInput = signal('1');
+  protected readonly pageSliderValue = signal(1);
+  protected readonly isJumping = signal(false);
   protected readonly contextMenu = signal<ContextMenuState>({
     visible: false,
     x: 0,
@@ -216,6 +221,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   protected readonly selectedCommentId = signal<string | null>(null);
   protected readonly editingTitleCommentId = signal<string | null>(null);
   protected readonly showObjects = signal(true);
+  protected readonly isDownloading = signal(false);
   protected readonly highlightSwatches = HIGHLIGHT_SWATCHES;
   protected readonly selectedHighlightColor = signal(HIGHLIGHT_SWATCHES[0].color);
   protected readonly commentLayoutSettings = signal<CommentLayoutSettings>({
@@ -258,6 +264,18 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   protected readonly hasPdf = computed(() => this.pdf.pageCount() > 0);
   protected readonly zoomPercent = computed(() => Math.round(this.pdf.zoom() * 100));
 
+  protected pageCountLabel(): string {
+    const count = this.pdf.pageCount();
+    return count > 0 ? String(count) : '-';
+  }
+
+  protected pageInputValue(): string {
+    return this.hasPdf() ? this.pageInput() : '-';
+  }
+
+  protected readonly isDragOver = signal(false);
+  protected readonly isLibraryOpen = signal(false);
+
   protected pdfSource(): string | undefined {
     return this.pdf.getCurrentFileSource() ?? undefined;
   }
@@ -289,6 +307,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   private compareScrollRaf: number | null = null;
   private isSyncingScroll = false;
   private dragState: DragState | null = null;
+  private jumpTargetPage: number | null = null;
+  private dragCounter = 0;
   protected readonly isBrowser: boolean;
 
   constructor(
@@ -298,10 +318,12 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     protected search: SearchFacadeService,
     protected annotations: AnnotationFacadeService,
     protected ocr: OcrFacadeService,
-    protected compare: CompareFacadeService
+    protected compare: CompareFacadeService,
+    protected library: PdfLibraryFacadeService
   ) {
     this.isBrowser = isPlatformBrowser(this.platformId);
     this.configurePdfWorker();
+    this.library.setSelectionResetHandler(() => this.resetSwitchState());
   }
 
   private configurePdfWorker(): void {
@@ -320,13 +342,18 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.syncDomRefs();
     this.syncCompareDomRefs();
     this.setupPageRendering();
+    this.setupFileDropListeners();
+    this.setupLibraryKeyListeners();
   }
 
   ngOnDestroy(): void {
     this.teardownScrollListeners();
     this.teardownDragListeners();
+    this.teardownFileDropListeners();
+    this.teardownLibraryKeyListeners();
     this.pageRenderSubscription?.unsubscribe();
     this.compareRenderSubscription?.unsubscribe();
+    this.library.setSelectionResetHandler(null);
   }
 
   private setupPageRendering(): void {
@@ -967,33 +994,12 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
 
   protected async onFileChange(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) {
+    const files = Array.from(input.files ?? []);
+    if (!files.length) {
       return;
     }
     input.value = '';
-    this.resetFeatureStates();
-    await this.pdf.loadFile(file);
-    await this.loadPdfAnnotations();
-    this.selectedOcrPage.set(1);
-    this.queueBaseRender();
-  }
-
-  private async loadPdfAnnotations(): Promise<void> {
-    if (!this.flags.markers && !this.flags.comments) {
-      this.annotations.setImportedMarkers([]);
-      this.annotations.setImportedComments([]);
-      return;
-    }
-    try {
-      const { markers, comments } = await this.pdf.readPdfAnnotations();
-      this.annotations.setImportedMarkers(this.flags.markers ? markers : []);
-      this.annotations.setImportedComments(this.flags.comments ? comments : []);
-    } catch (err) {
-      console.warn('PDF annotation import failed.', err);
-      this.annotations.setImportedMarkers([]);
-      this.annotations.setImportedComments([]);
-    }
+    await this.importPdfFiles(files);
   }
 
   protected async onCompareFileChange(event: Event): Promise<void> {
@@ -1045,6 +1051,50 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.showObjects.update((value) => !value);
   }
 
+  protected onPageInputChange(value: string): void {
+    if (!this.hasPdf()) {
+      return;
+    }
+    this.pageInput.set(this.normalizeDigits(value));
+  }
+
+  protected commitPageInput(): void {
+    if (!this.hasPdf()) {
+      return;
+    }
+    const parsed = this.parsePageInput(this.pageInput());
+    if (parsed === null) {
+      this.syncPageInput();
+      return;
+    }
+    this.jumpToPage(parsed);
+  }
+
+  protected onPageSliderInput(event: Event): void {
+    if (!this.hasPdf()) {
+      return;
+    }
+    const value = this.readRangeValue(event);
+    if (value === null) {
+      return;
+    }
+    const clamped = this.clampPageNumber(value);
+    this.pageSliderValue.set(clamped);
+    this.pageInput.set(String(clamped));
+  }
+
+  protected onPageSliderChange(event: Event): void {
+    if (!this.hasPdf()) {
+      return;
+    }
+    const value = this.readRangeValue(event);
+    if (value === null) {
+      this.syncPageInput();
+      return;
+    }
+    this.jumpToPage(value);
+  }
+
   protected async zoomIn(): Promise<void> {
     await this.applyZoomChange(() => this.pdf.zoomIn());
   }
@@ -1058,20 +1108,31 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected async downloadPdf(): Promise<void> {
-    if (!this.hasPdf()) {
+    if (!this.hasPdf() || this.isDownloading()) {
       return;
     }
-    const includeAnnotations = this.flags.annotatedDownload;
-    await this.pdf.downloadCurrentPdf({
-      includeAnnotations,
-      annotations: includeAnnotations ? this.buildAnnotationExport() : undefined
-    });
+    const includeAnnotations = this.flags.annotatedDownload && this.showObjects();
+    const fileNameOverride = this.buildDownloadFileName(includeAnnotations ? 'annotated' : 'original');
+    this.isDownloading.set(true);
+    try {
+      await this.pdf.downloadCurrentPdf({
+        includeAnnotations,
+        annotations: includeAnnotations ? this.buildAnnotationExport() : undefined,
+        fileNameOverride
+      });
+    } finally {
+      this.isDownloading.set(false);
+    }
   }
 
   private buildAnnotationExport(): PdfAnnotationExport {
     const highlights: PdfHighlightAnnotation[] = [];
-    if (this.flags.markers) {
-      this.annotations.exportMarkers().forEach((marker) => {
+    if (this.flags.markers || this.flags.search) {
+      const markers = this.annotations
+        .allMarkers()
+        .filter((marker) => marker.origin !== 'pdf')
+        .filter((marker) => marker.source === 'selection' || marker.source === 'search');
+      markers.forEach((marker) => {
         if (!marker.rects.length) {
           return;
         }
@@ -1090,6 +1151,12 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       highlights,
       comments: this.flags.comments ? this.annotations.exportComments() : []
     };
+  }
+
+  private buildDownloadFileName(mode: 'original' | 'annotated'): string {
+    const sourceName = this.pdf.pdfName() ?? 'document.pdf';
+    const baseName = sourceName.replace(/\.pdf$/i, '') || 'document';
+    return `${baseName}.${mode}.pdf`;
   }
 
   protected openContextMenuFromViewer(event: MouseEvent): void {
@@ -1409,16 +1476,20 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return total ? `全ページ (${total})` : '全ページ';
   }
 
-  private resetFeatureStates(): void {
+  private resetSwitchState(): void {
     this.searchQuery.set('');
     this.ocrScope.set('page');
     this.search.clear();
-    this.annotations.reset();
+    this.annotations.setSearchHighlights([]);
     this.compare.reset();
     this.ocr.reset();
     this.ocrActionMessage.set('');
     this.selectedMarkerId.set(null);
     this.selectedCommentId.set(null);
+    this.editingTitleCommentId.set(null);
+    this.replyDrafts.set({});
+    this.titleDrafts.set({});
+    this.resetPageJumpState();
     this.resetViewState();
   }
 
@@ -1434,6 +1505,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.resetCompareViewState();
     this.isSyncingScroll = false;
     this.dragState = null;
+    this.dragCounter = 0;
+    this.isDragOver.set(false);
     this.teardownDragListeners();
     this.closeContextMenu();
   }
@@ -1482,6 +1555,152 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
     return { x: Number(x.toFixed(4)), y: Number(y.toFixed(4)) };
+  }
+
+  protected openLibraryDialog(): void {
+    this.isLibraryOpen.set(true);
+    void this.library.ensureThumbnails();
+  }
+
+  protected closeLibraryDialog(): void {
+    this.isLibraryOpen.set(false);
+  }
+
+  protected async selectLibraryItem(id: string): Promise<void> {
+    const wasSelected = id === this.library.selectedId();
+    await this.library.select(id);
+    if (!wasSelected) {
+      this.afterLibrarySelection();
+    }
+    this.closeLibraryDialog();
+  }
+
+  protected async selectPrevPdf(): Promise<void> {
+    if (!this.library.hasPrev()) {
+      return;
+    }
+    await this.library.selectPrev();
+    this.afterLibrarySelection();
+  }
+
+  protected async selectNextPdf(): Promise<void> {
+    if (!this.library.hasNext()) {
+      return;
+    }
+    await this.library.selectNext();
+    this.afterLibrarySelection();
+  }
+
+  private async importPdfFiles(files: File[]): Promise<void> {
+    if (!files.length) {
+      return;
+    }
+    const addedCount = await this.library.addFiles(files);
+    if (!addedCount) {
+      this.pdf.setUserError('PDF以外は取り込めません');
+      return;
+    }
+    this.afterLibrarySelection();
+  }
+
+  private afterLibrarySelection(): void {
+    this.selectedOcrPage.set(1);
+    this.resetPageJumpState();
+    this.queueBaseRender();
+    this.queueCompareRender();
+  }
+
+  private setupFileDropListeners(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    document.addEventListener('dragenter', this.handleDocumentDragEnter);
+    document.addEventListener('dragover', this.handleDocumentDragOver);
+    document.addEventListener('dragleave', this.handleDocumentDragLeave);
+    document.addEventListener('drop', this.handleDocumentDrop);
+  }
+
+  private teardownFileDropListeners(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    document.removeEventListener('dragenter', this.handleDocumentDragEnter);
+    document.removeEventListener('dragover', this.handleDocumentDragOver);
+    document.removeEventListener('dragleave', this.handleDocumentDragLeave);
+    document.removeEventListener('drop', this.handleDocumentDrop);
+  }
+
+  private setupLibraryKeyListeners(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    document.addEventListener('keydown', this.handleLibraryKeydown);
+  }
+
+  private teardownLibraryKeyListeners(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    document.removeEventListener('keydown', this.handleLibraryKeydown);
+  }
+
+  private handleLibraryKeydown = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || !this.isLibraryOpen()) {
+      return;
+    }
+    event.preventDefault();
+    this.closeLibraryDialog();
+  };
+
+  private handleDocumentDragEnter = (event: DragEvent): void => {
+    if (!this.isFileDrag(event)) {
+      return;
+    }
+    this.dragCounter += 1;
+    this.isDragOver.set(true);
+  };
+
+  private handleDocumentDragOver = (event: DragEvent): void => {
+    if (!this.isFileDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  };
+
+  private handleDocumentDragLeave = (event: DragEvent): void => {
+    if (!this.isDragOver() && !this.isFileDrag(event)) {
+      return;
+    }
+    this.dragCounter = Math.max(0, this.dragCounter - 1);
+    if (this.dragCounter === 0) {
+      this.isDragOver.set(false);
+    }
+  };
+
+  private handleDocumentDrop = (event: DragEvent): void => {
+    if (!this.isFileDrag(event)) {
+      return;
+    }
+    event.preventDefault();
+    this.dragCounter = 0;
+    this.isDragOver.set(false);
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    void this.importDroppedFiles(files);
+  };
+
+  private async importDroppedFiles(files: File[]): Promise<void> {
+    await this.importPdfFiles(files);
+  }
+
+  private isFileDrag(event: DragEvent): boolean {
+    const types = event.dataTransfer?.types;
+    if (types && Array.from(types).includes('Files')) {
+      return true;
+    }
+    return (event.dataTransfer?.files?.length ?? 0) > 0;
   }
 
   private attachDragListeners(): void {
@@ -1879,6 +2098,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       scrollOffsets
     );
     this.pageOverlays.set(overlays);
+    this.updateCurrentPageFromScroll();
   }
 
   private syncCompareDomRefs(): void {
@@ -1953,6 +2173,55 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     }
   }
 
+  private updateCurrentPageFromScroll(): void {
+    if (!this.hasPdf()) {
+      return;
+    }
+    const container = this.pdfScrollContainer;
+    if (!container) {
+      return;
+    }
+    const overlays = this.pageOverlays();
+    if (!overlays.length) {
+      return;
+    }
+    const centerY = container.scrollTop + container.clientHeight / 2;
+    const nextPage = this.resolveClosestPageNumber(overlays, centerY);
+    if (!nextPage) {
+      return;
+    }
+    if (this.isJumping() && this.jumpTargetPage === nextPage) {
+      this.isJumping.set(false);
+      this.jumpTargetPage = null;
+    }
+    this.setCurrentPage(nextPage);
+  }
+
+  private resolveClosestPageNumber(overlays: PageOverlay[], centerY: number): number | null {
+    if (!overlays.length) {
+      return null;
+    }
+    let low = 0;
+    let high = overlays.length - 1;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      if (overlays[mid].top <= centerY) {
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    const rightIndex = Math.min(low, overlays.length - 1);
+    const leftIndex = Math.max(rightIndex - 1, 0);
+    const left = overlays[leftIndex];
+    const right = overlays[rightIndex];
+    const leftCenter = left.top + left.height / 2;
+    const rightCenter = right.top + right.height / 2;
+    return Math.abs(centerY - leftCenter) <= Math.abs(centerY - rightCenter)
+      ? left.pageNumber
+      : right.pageNumber;
+  }
+
   private resolveScrollContainer(viewerHost: HTMLElement | undefined): HTMLElement | null {
     if (!viewerHost) {
       return null;
@@ -2001,6 +2270,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
         this.compareScrollRaf = null;
       }
       this.updateScrollOffsets(container, pagesHost);
+      if (kind === 'base') {
+        this.updateCurrentPageFromScroll();
+      }
       if (!this.isSyncingScroll) {
         this.syncScrollPositions(kind);
       }
@@ -2102,6 +2374,91 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       return null;
     }
     return pageNumber;
+  }
+
+  private clampPageNumber(pageNumber: number): number {
+    const pageCount = this.pdf.pageCount();
+    if (pageCount <= 0) {
+      return 1;
+    }
+    return this.clamp(pageNumber, 1, pageCount);
+  }
+
+  private setCurrentPage(pageNumber: number): void {
+    const clamped = this.clampPageNumber(pageNumber);
+    if (
+      this.currentPage() === clamped &&
+      this.pageInput() === String(clamped) &&
+      this.pageSliderValue() === clamped
+    ) {
+      return;
+    }
+    this.currentPage.set(clamped);
+    this.pageInput.set(String(clamped));
+    this.pageSliderValue.set(clamped);
+  }
+
+  private jumpToPage(pageNumber: number): void {
+    if (!this.hasPdf()) {
+      return;
+    }
+    const clamped = this.clampPageNumber(pageNumber);
+    this.isJumping.set(true);
+    this.jumpTargetPage = clamped;
+    this.setCurrentPage(clamped);
+    const scrolled = this.scrollToPage(clamped);
+    if (!scrolled) {
+      this.isJumping.set(false);
+      this.jumpTargetPage = null;
+    }
+  }
+
+  private syncPageInput(): void {
+    this.pageInput.set(String(this.currentPage()));
+    this.pageSliderValue.set(this.currentPage());
+  }
+
+  private parsePageInput(value: string): number | null {
+    const normalized = this.normalizeDigits(value).trim();
+    if (!normalized || !/^\d+$/.test(normalized)) {
+      return null;
+    }
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+    return parsed;
+  }
+
+  private normalizeDigits(value: string): string {
+    const trimmed = value.replace(/\u3000/g, ' ');
+    let normalized = '';
+    for (const char of trimmed) {
+      const code = char.charCodeAt(0);
+      if (code >= 0xff10 && code <= 0xff19) {
+        normalized += String.fromCharCode(code - 0xff10 + 0x30);
+      } else {
+        normalized += char;
+      }
+    }
+    return normalized;
+  }
+
+  private readRangeValue(event: Event): number | null {
+    const target = event.target as HTMLInputElement | null;
+    if (!target) {
+      return null;
+    }
+    const value = Number(target.value);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  private resetPageJumpState(): void {
+    this.currentPage.set(1);
+    this.pageInput.set('1');
+    this.pageSliderValue.set(1);
+    this.isJumping.set(false);
+    this.jumpTargetPage = null;
   }
 
   private resolvePageNumberFromEvent(

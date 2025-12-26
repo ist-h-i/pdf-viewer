@@ -57,6 +57,24 @@ export interface PdfAnnotationExport {
   comments: CommentCard[];
 }
 
+export interface PdfLibraryItem {
+  id: string;
+  name: string;
+  displayName: string;
+  bytes: ArrayBuffer;
+  addedAt: number;
+  pageCount?: number;
+  thumbnailUrl?: string | null;
+  annotations?: {
+    userMarkers: Marker[];
+    userComments: CommentCard[];
+  };
+  imported?: {
+    markers: Marker[];
+    comments: CommentCard[];
+  };
+}
+
 export interface SearchHit {
   id: string;
   page: number;

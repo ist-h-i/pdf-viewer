@@ -7,6 +7,7 @@
             class="viewer-shell__file-picker-input"
             type="file"
             accept="application/pdf"
+            multiple
             (change)="onFileChange($event)"
           />
           <span>ファイルを選択</span>
@@ -41,6 +42,68 @@
               等倍
             </button>
           </div>
+          <div class="viewer-shell__toolbar-group viewer-shell__toolbar-group--page-jump">
+            <div class="viewer-shell__page-jump">
+              <input
+                class="viewer-shell__page-input"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]*"
+                [disabled]="!hasPdf()"
+                [ngModel]="pageInputValue()"
+                (ngModelChange)="onPageInputChange($event)"
+                (keydown.enter)="$event.preventDefault(); commitPageInput()"
+                (blur)="commitPageInput()"
+                aria-label="ペ�Eジ番号"
+              />
+              <span class="viewer-shell__page-total">/ {{ pageCountLabel() }}</span>
+              <button
+                type="button"
+                class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--compact"
+                (click)="commitPageInput()"
+                [disabled]="!hasPdf()"
+              >
+                移動
+              </button>
+            </div>
+            <input
+              class="viewer-shell__page-slider"
+              type="range"
+              min="1"
+              [max]="pdf.pageCount() || 1"
+              [value]="pageSliderValue()"
+              [disabled]="!hasPdf()"
+              (input)="onPageSliderInput($event)"
+              (change)="onPageSliderChange($event)"
+              aria-label="ペ�Eジスライダ�E"
+            />
+          </div>
+          <div class="viewer-shell__toolbar-group viewer-shell__toolbar-group--library">
+            <button
+              type="button"
+              class="viewer-shell__button viewer-shell__button--ghost"
+              (click)="selectPrevPdf()"
+              [disabled]="!library.hasPrev()"
+            >
+              前のPDF
+            </button>
+            <button
+              type="button"
+              class="viewer-shell__button"
+              (click)="openLibraryDialog()"
+              [disabled]="!library.items().length"
+            >
+              一覧
+            </button>
+            <button
+              type="button"
+              class="viewer-shell__button viewer-shell__button--ghost"
+              (click)="selectNextPdf()"
+              [disabled]="!library.hasNext()"
+            >
+              次のPDF
+            </button>
+          </div>
           <div class="viewer-shell__toolbar-group">
             <button
               type="button"
@@ -55,7 +118,7 @@
               type="button"
               class="viewer-shell__button"
               (click)="downloadPdf()"
-              [disabled]="!hasPdf()"
+              [disabled]="!hasPdf() || isDownloading()"
             >
               PDF ダウンロード
             </button>
@@ -66,7 +129,11 @@
         <div class="viewer-shell__status">
           <div class="viewer-shell__status-document">
             <span class="viewer-shell__status-label">現在のドキュメント</span>
-            @if (pdf.pdfName()) {
+            @if (library.selectedItem(); as selected) {
+              <span class="viewer-shell__status-name" [attr.title]="selected.name">
+                {{ selected.displayName }}
+              </span>
+            } @else if (pdf.pdfName()) {
               <span class="viewer-shell__status-name">{{ pdf.pdfName() }}</span>
             } @else {
               <span class="viewer-shell__status-name">ファイル未選択</span>
@@ -78,6 +145,11 @@
             }
             @if (pdf.isLoading()) {
               <span class="viewer-shell__status-pill viewer-shell__status-pill--loading">読み込み中...</span>
+            }
+            @if (isDownloading()) {
+              <span class="viewer-shell__status-pill viewer-shell__status-pill--loading">
+                ダウンロード中...
+              </span>
             }
             @if (pdf.lastError()) {
               <span class="viewer-shell__status-pill viewer-shell__status-pill--error">{{ pdf.lastError() }}</span>
@@ -94,6 +166,12 @@
         <p>右クリックのコンテキストメニューからコメント追加とテキストハイライトを行えます。</p>
         <p>検索結果は自動でハイライト表示されます。</p>
       </div>
+
+      @if (isDragOver()) {
+        <div class="viewer-shell__drag-overlay" aria-hidden="true">
+          <div class="viewer-shell__drag-overlay-content">PDFをここにドロップ</div>
+        </div>
+      }
 
       @if (!hasPdf()) {
         <div class="viewer-shell__empty-state">
@@ -731,4 +809,66 @@
       }
     </aside>
   </div>
+
+  @if (isLibraryOpen()) {
+    <div class="viewer-shell__library-overlay" (click)="closeLibraryDialog()">
+      <div
+        class="viewer-shell__library-dialog"
+        role="dialog"
+        aria-modal="true"
+        (click)="$event.stopPropagation()"
+      >
+        <div class="viewer-shell__library-header">
+          <div class="viewer-shell__library-heading">
+            <h3 class="viewer-shell__library-title">PDF一覧</h3>
+            <span class="viewer-shell__library-count">{{ library.items().length }}件</span>
+          </div>
+          <button
+            type="button"
+            class="viewer-shell__button viewer-shell__button--ghost"
+            (click)="closeLibraryDialog()"
+          >
+            閉じる
+          </button>
+        </div>
+        <div class="viewer-shell__library-content">
+          @if (!library.items().length) {
+            <div class="viewer-shell__empty-state">まだPDFがありません。</div>
+          } @else {
+            <div class="viewer-shell__library-grid">
+              @for (item of library.items(); track item.id) {
+                <button
+                  type="button"
+                  class="viewer-shell__library-card"
+                  [class.viewer-shell__library-card--selected]="item.id === library.selectedId()"
+                  [attr.aria-pressed]="item.id === library.selectedId()"
+                  (click)="selectLibraryItem(item.id)"
+                >
+                  <div class="viewer-shell__library-thumb">
+                    @if (item.thumbnailUrl === undefined) {
+                      <div class="viewer-shell__library-thumb-skeleton" aria-hidden="true"></div>
+                    } @else if (item.thumbnailUrl) {
+                      <img [src]="item.thumbnailUrl" [alt]="item.displayName" />
+                    } @else {
+                      <div class="viewer-shell__library-thumb-placeholder" aria-hidden="true">
+                        <span>PDF</span>
+                      </div>
+                    }
+                  </div>
+                  <div class="viewer-shell__library-meta">
+                    <span class="viewer-shell__library-name" [attr.title]="item.name">
+                      {{ item.displayName }}
+                    </span>
+                    @if (item.pageCount) {
+                      <span class="viewer-shell__library-pages">{{ item.pageCount }}ページ</span>
+                    }
+                  </div>
+                </button>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
 </div>
