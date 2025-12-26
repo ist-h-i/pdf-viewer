@@ -169,10 +169,6 @@
                               [class.viewer-shell__page-highlight--selected]="isSelectedMarker(marker.id)"
                               [attr.data-marker-id]="marker.id"
                               (click)="focusMarker(marker, $event)"
-                              [class.viewer-shell__page-highlight--draggable]="
-                                marker.source === 'selection' && !isReadOnlyMarker(marker)
-                              "
-                              (pointerdown)="startMarkerDrag(marker, $event)"
                             ></div>
                           }
                           @if (marker.label && marker.rects.length) {
@@ -185,10 +181,6 @@
                               [class.viewer-shell__page-highlight-label--selected]="isSelectedMarker(marker.id)"
                               [attr.data-marker-id]="marker.id"
                               (click)="focusMarker(marker, $event)"
-                              [class.viewer-shell__page-highlight-label--draggable]="
-                                marker.source === 'selection' && !isReadOnlyMarker(marker)
-                              "
-                              (pointerdown)="startMarkerDrag(marker, $event)"
                             >
                               {{ marker.label }}
                             </div>

@@ -52,7 +52,7 @@ export class PdfFacadeService {
   private pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
   private pdfLibPromise: Promise<typeof import('pdf-lib')> | null = null;
 
-  private readonly scale = signal(1.25);
+  private readonly scale = signal(1);
   readonly zoom = this.scale.asReadonly();
 
   private readonly pdfDoc = signal<PDFDocumentProxy | null>(null);
@@ -177,7 +177,7 @@ export class PdfFacadeService {
   }
 
   async resetZoom(): Promise<void> {
-    await this.setScale(1.25);
+    await this.setScale(1);
   }
 
   async setScale(next: number): Promise<void> {

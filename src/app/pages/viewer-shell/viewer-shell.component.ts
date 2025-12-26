@@ -408,7 +408,11 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
           return;
         }
         this.textLayerElementMap.set(pageNumber, layer);
-        if (layout) {
+        const syncedLayout = this.captureTextLayoutFromDom(pageNumber, layer, pageElement ?? undefined);
+        if (syncedLayout) {
+          this.textLayouts.set(pageNumber, syncedLayout);
+          this.renderedTextLayers.add(pageNumber);
+        } else if (layout) {
           this.textLayouts.set(pageNumber, layout);
           this.renderedTextLayers.add(pageNumber);
         }
@@ -856,7 +860,10 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!pageElement) {
       return { lineLength: 0, lineAngle: 0 };
     }
-    const rect = pageElement.getBoundingClientRect();
+    const rect = this.resolvePageContentRect(pageElement);
+    if (!rect) {
+      return { lineLength: 0, lineAngle: 0 };
+    }
     const bubbleWidth = this.getBubbleWidth(comment);
     const bubbleHeight = this.getBubbleHeight(comment);
     const anchorX = comment.anchorX * rect.width;
@@ -1468,7 +1475,10 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     event: MouseEvent | PointerEvent,
     host: HTMLElement
   ): { x: number; y: number } {
-    const rect = host.getBoundingClientRect();
+    const rect = this.resolvePageContentRect(host);
+    if (!rect || !rect.width || !rect.height) {
+      return { x: 0, y: 0 };
+    }
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
     return { x: Number(x.toFixed(4)), y: Number(y.toFixed(4)) };
@@ -1617,9 +1627,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!pagesElement) {
       return { minX: 0, maxX: 1, minY: 0, maxY: 1 };
     }
-    const pageRect = pageElement.getBoundingClientRect();
+    const pageRect = this.resolvePageContentRect(pageElement);
     const pagesRect = pagesElement.getBoundingClientRect();
-    if (!pageRect.width || !pageRect.height) {
+    if (!pageRect || !pageRect.width || !pageRect.height) {
       return { minX: 0, maxX: 1, minY: 0, maxY: 1 };
     }
     return {
@@ -1708,8 +1718,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!pageElement || !marker.rects.length) {
       return null;
     }
-    const pageRect = pageElement.getBoundingClientRect();
-    if (!pageRect.width || !pageRect.height) {
+    const pageRect = this.resolvePageContentRect(pageElement);
+    if (!pageRect || !pageRect.width || !pageRect.height) {
       return null;
     }
     const bounds = marker.rects.map((rect) => ({
@@ -1739,8 +1749,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!pageElement) {
       return null;
     }
-    const pageRect = pageElement.getBoundingClientRect();
-    if (!pageRect.width || !pageRect.height) {
+    const pageRect = this.resolvePageContentRect(pageElement);
+    if (!pageRect || !pageRect.width || !pageRect.height) {
       return null;
     }
     const bubbleWidth = this.getBubbleWidth(comment);
@@ -2058,7 +2068,10 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       if (!pageNumber) {
         return;
       }
-      const rect = pageElement.getBoundingClientRect();
+      const rect = this.resolvePageContentRect(pageElement);
+      if (!rect) {
+        return;
+      }
       overlays.push({
         pageNumber,
         width: rect.width,
@@ -2321,12 +2334,12 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     };
 
     for (const [pageNumber, pageElement] of this.pageElementMap.entries()) {
-      pushPage(pageNumber, pageElement.getBoundingClientRect());
+      pushPage(pageNumber, this.resolvePageContentRect(pageElement));
     }
 
     this.collectPdfPageElements(this.pdfViewerHost?.nativeElement).forEach((pageElement) => {
       const pageNumber = this.readPageNumber(pageElement);
-      pushPage(pageNumber, pageElement.getBoundingClientRect());
+      pushPage(pageNumber, this.resolvePageContentRect(pageElement));
       if (pageNumber && !this.pageElementMap.has(pageNumber)) {
         this.pageElementMap.set(pageNumber, pageElement);
       }
@@ -2539,10 +2552,28 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   private rectsFromRange(range: Range, pageElement: HTMLElement): HighlightRect[] {
-    const containerRect = pageElement.getBoundingClientRect();
+    const containerRect = this.resolvePageContentRect(pageElement);
+    if (!containerRect) {
+      return [];
+    }
     return Array.from(range.getClientRects())
       .map((clientRect) => this.normalizeRect(clientRect, containerRect))
       .filter((rect) => rect.width > 0 && rect.height > 0);
+  }
+
+  private resolvePageContentRect(pageElement: HTMLElement): DOMRect | null {
+    const rect = pageElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      return null;
+    }
+    const width = pageElement.clientWidth || rect.width;
+    const height = pageElement.clientHeight || rect.height;
+    if (!width || !height) {
+      return null;
+    }
+    const left = rect.left + pageElement.clientLeft;
+    const top = rect.top + pageElement.clientTop;
+    return new DOMRect(left, top, width, height);
   }
 
   private normalizeRect(rect: DOMRect, container: DOMRect): HighlightRect {
@@ -2607,13 +2638,65 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return rects;
   }
 
+  // Keep the text layer aligned when the canvas is resized by CSS.
+  private syncTextLayerScale(layer: HTMLElement, hostElement?: HTMLElement | null): void {
+    const host = hostElement ?? layer.parentElement;
+    if (!host) {
+      return;
+    }
+    const targetElement = host.querySelector('canvas') ?? host;
+    const targetRect = targetElement.getBoundingClientRect();
+    if (!targetRect.width || !targetRect.height) {
+      return;
+    }
+    const baseWidth = layer.offsetWidth || Number.parseFloat(layer.style.width);
+    const baseHeight = layer.offsetHeight || Number.parseFloat(layer.style.height);
+    if (!baseWidth || !baseHeight) {
+      return;
+    }
+    const scaleX = Number((targetRect.width / baseWidth).toFixed(4));
+    const scaleY = Number((targetRect.height / baseHeight).toFixed(4));
+    if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY)) {
+      return;
+    }
+    const nearOne = (value: number): boolean => Math.abs(value - 1) < 0.002;
+    const baseTransformKey = 'textLayerBaseTransform';
+    if (nearOne(scaleX) && nearOne(scaleY)) {
+      if (layer.dataset['textLayerScaleX'] || layer.dataset['textLayerScaleY']) {
+        const baseTransform = layer.dataset[baseTransformKey] ?? '';
+        layer.style.transform = baseTransform;
+        delete layer.dataset[baseTransformKey];
+        delete layer.dataset['textLayerScaleX'];
+        delete layer.dataset['textLayerScaleY'];
+      }
+      return;
+    }
+    const prevScaleX = Number(layer.dataset['textLayerScaleX'] ?? '1');
+    const prevScaleY = Number(layer.dataset['textLayerScaleY'] ?? '1');
+    if (scaleX === prevScaleX && scaleY === prevScaleY) {
+      return;
+    }
+    if (!layer.dataset[baseTransformKey]) {
+      layer.dataset[baseTransformKey] = layer.style.transform ?? '';
+    }
+    const baseTransform = layer.dataset[baseTransformKey] ?? '';
+    layer.dataset['textLayerScaleX'] = scaleX.toString();
+    layer.dataset['textLayerScaleY'] = scaleY.toString();
+    layer.style.transformOrigin = '0 0';
+    layer.style.transform =
+      baseTransform && baseTransform !== 'none'
+        ? `${baseTransform} scale(${scaleX}, ${scaleY})`
+        : `scale(${scaleX}, ${scaleY})`;
+  }
+
   private captureTextLayoutFromDom(
     pageNumber: number,
     layer: HTMLElement,
     hostElement?: HTMLElement
   ): PageTextLayout | null {
     const pageElement = hostElement ?? this.pageElementMap.get(pageNumber) ?? layer.parentElement;
-    const containerRect = pageElement?.getBoundingClientRect();
+    this.syncTextLayerScale(layer, pageElement ?? undefined);
+    const containerRect = pageElement ? this.resolvePageContentRect(pageElement) : null;
     if (!containerRect || !containerRect.width || !containerRect.height) {
       return null;
     }

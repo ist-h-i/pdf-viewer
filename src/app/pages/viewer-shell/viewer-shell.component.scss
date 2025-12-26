@@ -54,6 +54,11 @@
   border-color: mixins.color('gray-800');
 }
 
+.viewer-shell__file-picker:focus-within {
+  @include mixins.focus-ring(mixins.color('blue-300'));
+  border-color: mixins.color('blue-600-a50');
+}
+
 .viewer-shell__file-picker-input {
   @apply hidden;
 }
@@ -83,16 +88,32 @@
   border-color: mixins.color('gray-800');
   background-image: linear-gradient(90deg, mixins.color('blue-600'), mixins.color('violet-600'));
   color: mixins.color('white');
+  @apply transition-[border-color,box-shadow,background,color] duration-[120ms] ease-[ease];
 }
 
 .viewer-shell__button:disabled {
   @apply cursor-not-allowed opacity-60;
 }
 
+.viewer-shell__button:focus-visible {
+  @include mixins.focus-ring(mixins.color('blue-300'));
+}
+
+.viewer-shell__button:hover:not(:disabled) {
+  box-shadow: 0 8px 18px mixins.color('black-a35');
+}
+
 .viewer-shell__button--ghost {
   background-color: mixins.color('transparent');
   border-color: mixins.color('gray-800');
   color: mixins.color('steel-200');
+}
+
+.viewer-shell__button--ghost:hover:not(:disabled) {
+  background-color: mixins.color('slate-900-a60');
+  border-color: mixins.color('slate-400-a35');
+  color: mixins.color('steel-100');
+  box-shadow: none;
 }
 
 .viewer-shell__button--active {
@@ -193,7 +214,7 @@
 }
 
 .viewer-shell__viewer-grid {
-  @apply grid flex-1 min-h-0 min-w-0 gap-4 overflow-auto grid-cols-1 items-stretch overscroll-contain;
+  @apply grid flex-1 min-h-0 min-w-0 gap-4 overflow-hidden grid-cols-1 items-stretch overscroll-contain;
 }
 
 .viewer-shell__viewer-grid--compare {
@@ -281,7 +302,7 @@
 .viewer-shell__page-overlay--changed {
   @apply rounded-[10px] border border-solid;
   border-color: mixins.color('amber-400-a70');
-  box-shadow: 0 0 0 2px mixins.color('amber-400-a25'), 0 10px 25px mixins.color('black-a35');
+  box-shadow: 0 0 0 1px mixins.color('amber-400-a25'), 0 10px 25px mixins.color('black-a35');
 }
 
 .viewer-shell__page-overlay--changed .viewer-shell__page-label {
@@ -315,14 +336,6 @@
   background-color: var(--marker-color, mixins.color('highlight-default'));
 }
 
-.viewer-shell__page-highlight--draggable {
-  @apply pointer-events-auto cursor-grab touch-none;
-}
-
-.viewer-shell__page-highlight--draggable:active {
-  @apply cursor-grabbing;
-}
-
 .viewer-shell__page-highlight--selected {
   @apply transform-gpu;
 }
@@ -330,7 +343,7 @@
 .viewer-shell__page-highlight--selected::before {
   @apply opacity-90 mix-blend-normal;
   border-color: var(--highlight-strong, mixins.color('white-a75'));
-  box-shadow: 0 0 0 2px var(--highlight-strong, mixins.color('white-a60')),
+  box-shadow: 0 0 0 1px var(--highlight-strong, mixins.color('white-a60')),
     0 6px 20px mixins.color('black-a35');
 }
 
@@ -346,17 +359,9 @@
   @apply pointer-events-auto z-[3] cursor-pointer select-none;
 }
 
-.viewer-shell__page-highlight-label--draggable {
-  @apply pointer-events-auto cursor-grab touch-none;
-}
-
-.viewer-shell__page-highlight-label--draggable:active {
-  @apply cursor-grabbing;
-}
-
 .viewer-shell__page-highlight-label--selected {
   @apply opacity-95;
-  box-shadow: 0 0 0 2px var(--highlight-strong, mixins.color('white-a50')),
+  box-shadow: 0 0 0 1px var(--highlight-strong, mixins.color('white-a50')),
     0 8px 20px mixins.color('black-a40');
 }
 
@@ -388,7 +393,7 @@
 }
 
 .viewer-shell__comment-anchor {
-  @apply absolute h-4 w-4 rounded-full border-2 border-solid cursor-grab pointer-events-auto touch-none z-[3];
+  @apply absolute h-4 w-4 rounded-full border border-solid cursor-grab pointer-events-auto touch-none z-[3];
   @include mixins.point-vars(--anchor-left, --anchor-top, 0%);
   @apply -translate-x-1/2 -translate-y-1/2;
   background-image: radial-gradient(
@@ -398,12 +403,12 @@
     var(--comment-accent-strong) 100%
   );
   border-color: mixins.color('slate-900-a90');
-  box-shadow: 0 0 0 4px var(--comment-glow), 0 10px 22px mixins.color('black-a45');
+  box-shadow: 0 0 0 2px var(--comment-glow), 0 10px 22px mixins.color('black-a45');
 }
 
 .viewer-shell__comment-anchor::after {
   @apply content-[''];
-  @apply absolute inset-[-6px] rounded-full border border-solid;
+  @apply absolute inset-[-4px] rounded-full border border-solid;
   @apply border-[color:var(--comment-accent-soft)] opacity-70;
 }
 
@@ -412,10 +417,10 @@
 }
 
 .viewer-shell__comment-line {
-  @apply absolute w-[var(--line-length)] h-0.5 origin-left -translate-y-1/2 rotate-[var(--line-angle)] rounded-full;
+  @apply absolute w-[var(--line-length)] h-px origin-left -translate-y-1/2 rotate-[var(--line-angle)] rounded-full;
   @include mixins.point-vars(--line-left, --line-top, 0%);
   @apply bg-[linear-gradient(90deg,var(--comment-accent),var(--comment-accent-strong))];
-  @apply shadow-[0_0_0_2px_var(--comment-glow)] pointer-events-none z-[1];
+  @apply shadow-[0_0_0_1px_var(--comment-glow)] pointer-events-none z-[1];
 }
 
 .viewer-shell__comment-bubble {
@@ -432,9 +437,9 @@
 .viewer-shell__comment-bubble-header {
   @apply flex items-center gap-2 px-3 py-2 text-[11px] tracking-[0.12em] uppercase cursor-grab;
   color: mixins.color('slate-200');
-  background-image: linear-gradient(90deg, mixins.color('sky-400-a28'), mixins.color('teal-500-a18'));
+  background-image: linear-gradient(90deg, mixins.color('sky-400-a40'), mixins.color('teal-500-a25'));
   @apply border-b border-solid;
-  border-bottom-color: mixins.color('sky-300-a30');
+  border-bottom-color: mixins.color('sky-300-a40');
 }
 
 .viewer-shell__comment-bubble-header:active {
@@ -479,6 +484,10 @@
   border-color: mixins.color('sky-300-a50');
 }
 
+.viewer-shell__comment-bubble-edit:focus-visible {
+  @include mixins.focus-ring(mixins.color('sky-300'));
+}
+
 .viewer-shell__comment-bubble-body {
   @apply flex min-h-0 flex-1 flex-col gap-2 px-3 py-2.5 text-xs overflow-auto leading-[1.4];
   color: mixins.color('slate-200');
@@ -491,8 +500,8 @@
 .viewer-shell__comment-bubble-actions {
   @apply flex flex-col gap-2 px-3 pt-2.5 pb-3;
   @apply border-t border-solid;
-  border-top-color: mixins.color('slate-400-a20');
-  background-color: mixins.color('slate-900-a45');
+  border-top-color: mixins.color('slate-400-a30');
+  background-color: mixins.color('slate-900-a60');
 }
 
 .viewer-shell__comment-bubble-actions .viewer-shell__textarea {
@@ -560,8 +569,8 @@
 }
 
 .viewer-shell__comment-callout--selected .viewer-shell__comment-bubble-header {
-  background-image: linear-gradient(90deg, mixins.color('amber-400-a35'), mixins.color('amber-500-a20'));
-  border-bottom-color: mixins.color('amber-400-a45');
+  background-image: linear-gradient(90deg, mixins.color('amber-400-a45'), mixins.color('amber-500-a30'));
+  border-bottom-color: mixins.color('amber-400-a60');
 }
 
 .viewer-shell__side-panel {
@@ -595,6 +604,14 @@
 .viewer-shell__select,
 .viewer-shell__textarea {
   @include mixins.field-base;
+}
+
+.viewer-shell__input:focus,
+.viewer-shell__select:focus,
+.viewer-shell__textarea:focus {
+  @apply outline-none;
+  border-color: mixins.color('blue-600-a50');
+  box-shadow: 0 0 0 1px mixins.color('blue-600-a35');
 }
 
 .viewer-shell__input--grow,
@@ -646,6 +663,10 @@
   @apply underline;
 }
 
+.viewer-shell__link:focus-visible {
+  @include mixins.focus-ring(mixins.color('blue-300'));
+}
+
 .viewer-shell__context-menu {
   @include mixins.point-vars(--context-menu-left, --context-menu-top, 0px);
   @apply fixed flex flex-col gap-2 border border-solid rounded-xl p-2.5 min-w-[220px] z-20;
@@ -671,7 +692,7 @@
 
 .viewer-shell__highlight-swatch--selected {
   border-color: mixins.color('slate-50');
-  box-shadow: 0 0 0 2px mixins.color('slate-50-a45');
+  box-shadow: 0 0 0 1px mixins.color('slate-50-a45');
 }
 
 .viewer-shell__highlight-swatch:focus-visible {
@@ -715,11 +736,16 @@
 }
 
 .viewer-shell__highlight-items {
-  @apply flex flex-col gap-1;
+  @apply mt-1 flex flex-col gap-1;
 }
 
 .viewer-shell__highlight-item {
   @include mixins.list-item-base;
+}
+
+.viewer-shell__highlight-item:hover {
+  border-color: mixins.color('slate-400-a35');
+  background-color: mixins.color('slate-900-a80');
 }
 
 .viewer-shell__highlight-item:focus-visible {
@@ -776,11 +802,16 @@
 }
 
 .viewer-shell__comment-items {
-  @apply flex flex-col gap-1;
+  @apply mt-1 flex flex-col gap-1;
 }
 
 .viewer-shell__comment-item {
   @include mixins.list-item-base;
+}
+
+.viewer-shell__comment-item:hover {
+  border-color: mixins.color('slate-400-a35');
+  background-color: mixins.color('slate-900-a80');
 }
 
 .viewer-shell__comment-item:focus-visible {

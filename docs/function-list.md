@@ -66,3 +66,7 @@
 - コメント: [comment-design.md](comment-design.md) / [comment-uiux-redesign.md](comment-uiux-redesign.md)
 - ハイライト: [highlight-design.md](highlight-design.md) / [bug-report-selection-highlight-disabled.md](bug-report-selection-highlight-disabled.md)
 - フォーカス/スクロール: [focus-scroll-design.md](focus-scroll-design.md)
+- 複数PDFライブラリ: [multi-pdf-library-design.md](multi-pdf-library-design.md)
+- ドラッグ&ドロップ: [drag-drop-import-design.md](drag-drop-import-design.md)
+- 再出力（注釈付き/原本）: [object-aware-download-design.md](object-aware-download-design.md) / [pdf-annotation-investigation.md](pdf-annotation-investigation.md)
+- ページ番号ジャンプ: [page-jump-design.md](page-jump-design.md)
