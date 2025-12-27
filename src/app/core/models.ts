@@ -50,6 +50,7 @@ export interface PdfHighlightAnnotation {
   rects: HighlightRect[];
   color: string;
   contents?: string;
+  subject?: string;
 }
 
 export interface PdfAnnotationExport {

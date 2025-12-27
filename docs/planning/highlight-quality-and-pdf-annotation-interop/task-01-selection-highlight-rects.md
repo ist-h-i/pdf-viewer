@@ -26,13 +26,13 @@
 - 0幅/0高の除去（現状もあるが、整形後も保証）
 
 ## 実装タスク（チェックリスト）
-- [ ] `addHighlightFromSelection()` の単一ページ選択で、`offsets && layout` がある場合は `rectsFromOffsetsInLayout(layout, start, end)` を優先する
-- [ ] `Range.getClientRects()` フォールバックは残す（`layout` 未取得時・複数ページ選択時）
-- [ ] rect 整形ユーティリティ（例: `sanitizeHighlightRects(rects)`）を追加する
-  - [ ] clamp（`left/top/width/height` を 0..100）
-  - [ ] 重複除去（同値 or 近似同値）
-  - [ ] 近接マージ（同一行の連続矩形を統合）
-- [ ] `collectSelectionRectsByPage()` にも同じ整形を適用する（複数ページ選択時の rects を過大にしない）
+- [x] `addHighlightFromSelection()` の単一ページ選択で、`offsets && layout` がある場合は `rectsFromOffsetsInLayout(layout, start, end)` を優先する
+- [x] `Range.getClientRects()` フォールバックは残す（`layout` 未取得時・複数ページ選択時）
+- [x] rect 整形ユーティリティ（例: `sanitizeHighlightRects(rects)`）を追加する
+  - [x] clamp（`left/top/width/height` を 0..100）
+  - [x] 重複除去（同値 or 近似同値）
+  - [x] 近接マージ（同一行の連続矩形を統合）
+- [x] `collectSelectionRectsByPage()` にも同じ整形を適用する（複数ページ選択時の rects を過大にしない）
 
 ## 受け入れ条件
 - 典型的なPDFで、単語/部分選択のハイライトが「行全体」になりにくい

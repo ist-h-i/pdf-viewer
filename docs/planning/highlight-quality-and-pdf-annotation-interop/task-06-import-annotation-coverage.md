@@ -42,9 +42,9 @@ Acrobat で追加した注釈を本アプリで取り込んだ際に、欠落や
 
 ## 実装タスク（チェックリスト）
 - [ ] `task-00` の決定に従い、対応 subtype 一覧をコードとドキュメントに反映する
-- [ ] `/Text` + `/Popup` の関係を考慮して import できるようにする（可能な範囲で）
+- [x] `/Text` + `/Popup` の関係を考慮して import できるようにする（可能な範囲で）
 - [ ] Markup subtype（Underline等）を追加する場合は、UI上の表現を決めてから実装する
-- [ ] 取り込み注釈は `origin='pdf'` として read-only を維持する（Phase 2 のスコープ）
+- [x] 取り込み注釈は `origin='pdf'` として read-only を維持する（Phase 2 のスコープ）
 
 ## 受け入れ条件
 - Acrobat で追加した注釈を取り込んでも、少なくとも `/Highlight` と `/Text` が欠落せず、位置と内容が破綻しない

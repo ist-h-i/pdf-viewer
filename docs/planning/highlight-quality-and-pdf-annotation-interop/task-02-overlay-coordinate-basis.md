@@ -30,10 +30,10 @@
 既存の `syncDomRefs()` 呼び出し箇所を洗い出し、ズーム・再レンダリングが完了したタイミングで再計算が走るようにする。
 
 ## 実装タスク（チェックリスト）
-- [ ] `resolvePageContentRect()` を「canvas の `getBoundingClientRect()`」を優先する形に変更する（canvas が無い場合は現状フォールバック）
-- [ ] `buildPageOverlays()` の overlay サイズが、canvas の表示サイズと一致することを確認する
-- [ ] `captureTextLayoutFromDom()` の `%正規化` が overlay と同じ基準になることを確認する
-- [ ] `syncDomRefs()` の呼び出しタイミングを点検し、ズーム/再レンダリング後に必ず最新化されるようにする
+- [x] `resolvePageContentRect()` を「canvas の `getBoundingClientRect()`」を優先する形に変更する（canvas が無い場合は現状フォールバック）
+- [x] `buildPageOverlays()` の overlay サイズが、canvas の表示サイズと一致することを確認する
+- [x] `captureTextLayoutFromDom()` の `%正規化` が overlay と同じ基準になることを確認する
+- [x] `syncDomRefs()` の呼び出しタイミングを点検し、ズーム/再レンダリング後に必ず最新化されるようにする
   - 例: レンダリング完了イベント、`requestAnimationFrame`、`ResizeObserver` 等の追加検討
 
 ## 受け入れ条件

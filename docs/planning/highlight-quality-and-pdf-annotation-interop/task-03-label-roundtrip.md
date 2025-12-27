@@ -21,11 +21,11 @@
 - 必要なら（要件次第）、選択文字列（プレビュー）を `Subject` 等の別フィールドに保持して復元できるようにする（`task-00` で合意）。
 
 ## 実装タスク（チェックリスト）
-- [ ] `buildAnnotationExport()` を `contents = label || text` に修正する
-- [ ] 取り込み側で `Contents/Subject` のマッピングを整理する
+- [x] `buildAnnotationExport()` を `contents = label || text` に修正する
+- [x] 取り込み側で `Contents/Subject` のマッピングを整理する
   - `label`: `Contents`（優先）
   - `text`: `Subject`（または `Contents` フォールバック）
-- [ ] コメント（`/Text`）についても、タイトル/本文の復元ルールを整理し、再取り込みで内容が変わらないことを保証する
+- [x] コメント（`/Text`）についても、タイトル/本文の復元ルールを整理し、再取り込みで内容が変わらないことを保証する
 
 ## 受け入れ条件
 - ハイライトのラベルを編集 → 注釈付きPDFをダウンロード → 再取り込みしてもラベルが保持される

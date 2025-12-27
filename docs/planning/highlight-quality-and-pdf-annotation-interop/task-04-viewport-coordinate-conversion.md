@@ -27,13 +27,13 @@ PDF.js の `PageViewport` を座標変換の基準にする。
   - `viewport.convertToPdfPoint(x, y)` でPDF座標へ変換して `Rect/QuadPoints` を生成
 
 ## 実装タスク（チェックリスト）
-- [ ] Import:
-  - [ ] `QuadPoints` の各点（pdfX,pdfY）を viewport 点へ変換し、viewport 上の bbox を取り `%` rect を作る
-  - [ ] `Rect` しか無い場合も、4隅を変換して bbox を取り `%` rect を作る（回転時の順序差を吸収）
-- [ ] Export:
-  - [ ] `HighlightRect` を viewport→pdf に変換して `QuadPoints` を作る（rect 単位、または統合bbox＋複数QuadPoints）
-  - [ ] 注釈辞書の `Rect` は `QuadPoints` 全体の bbox で生成する
-- [ ] コメント（/Text）の位置も viewport 変換へ寄せる（少なくとも中心点の変換を統一）
+- [x] Import:
+  - [x] `QuadPoints` の各点（pdfX,pdfY）を viewport 点へ変換し、viewport 上の bbox を取り `%` rect を作る
+  - [x] `Rect` しか無い場合も、4隅を変換して bbox を取り `%` rect を作る（回転時の順序差を吸収）
+- [x] Export:
+  - [x] `HighlightRect` を viewport→pdf に変換して `QuadPoints` を作る（rect 単位、または統合bbox＋複数QuadPoints）
+  - [x] 注釈辞書の `Rect` は `QuadPoints` 全体の bbox で生成する
+- [x] コメント（/Text）の位置も viewport 変換へ寄せる（少なくとも中心点の変換を統一）
 - [ ] 回転/CropBox のあるPDFで、Import/Export の両方を手動検証する
 
 ## 受け入れ条件

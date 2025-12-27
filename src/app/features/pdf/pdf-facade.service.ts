@@ -30,6 +30,8 @@ type PdfJsAnnotationData = {
   title?: string;
   subject?: string;
   opacity?: number;
+  popupRef?: string | null;
+  parentRect?: ArrayLike<number> | null;
 };
 
 type PdfAnnotationImport = {
@@ -419,41 +421,89 @@ export class PdfFacadeService {
       const page = await doc.getPage(pageNumber);
       const viewport = page.getViewport({ scale: 1 });
       const annotations = (await page.getAnnotations({ intent: 'display' })) as PdfJsAnnotationData[];
+      const popups = new Map<string, { annotation: PdfJsAnnotationData; index: number }>();
       annotations.forEach((annotation, index) => {
         const subtype = annotation.subtype?.toLowerCase();
+        if (subtype === 'popup' && annotation.id) {
+          popups.set(annotation.id, { annotation, index });
+        }
+      });
+      const usedPopups = new Set<string>();
+      const resolvePopupData = (
+        annotation: PdfJsAnnotationData
+      ): { annotation: PdfJsAnnotationData; rectSource: ArrayLike<number> | null } => {
+        const popupRef = annotation.popupRef ?? null;
+        const popupEntry = popupRef ? popups.get(popupRef) : null;
+        if (!popupEntry) {
+          return { annotation, rectSource: annotation.rect ?? null };
+        }
+        if (popupRef) {
+          usedPopups.add(popupRef);
+        }
+        const popup = popupEntry.annotation;
+        const merged: PdfJsAnnotationData = {
+          ...annotation,
+          contents: annotation.contents?.trim() ? annotation.contents : popup.contents,
+          title: annotation.title?.trim() ? annotation.title : popup.title,
+          subject: annotation.subject?.trim() ? annotation.subject : popup.subject
+        };
+        const rectSource = annotation.rect ?? popup.parentRect ?? popup.rect ?? null;
+        return { annotation: merged, rectSource };
+      };
+      annotations.forEach((annotation, index) => {
+        const subtype = annotation.subtype?.toLowerCase();
+        if (subtype === 'popup') {
+          return;
+        }
         if (subtype === 'highlight') {
-          const rects = this.buildHighlightRectsFromAnnotation(
-            annotation,
-            viewport.width,
-            viewport.height
-          );
+          const rects = this.buildHighlightRectsFromAnnotation(annotation, viewport);
           if (!rects.length) {
             return;
           }
           const contents = annotation.contents?.trim() ?? '';
+          const subject = annotation.subject?.trim() ?? '';
+          const label = contents || subject || DEFAULT_IMPORTED_HIGHLIGHT_LABEL;
+          const text = subject || (contents ? contents : undefined);
           markers.push({
             id: this.buildPdfAnnotationId('highlight', annotation.id, pageNumber, index),
             page: pageNumber,
             color: this.parseAnnotationColor(annotation.color, annotation.opacity),
-            label: contents || DEFAULT_IMPORTED_HIGHLIGHT_LABEL,
+            label,
             rects,
             source: 'selection',
-            text: contents || undefined,
+            text,
             origin: 'pdf'
           });
           return;
         }
         if (subtype === 'text' || subtype === 'freetext') {
+          const resolved = resolvePopupData(annotation);
           const comment = this.buildImportedComment(
-            annotation,
+            resolved.annotation,
             pageNumber,
-            viewport.width,
-            viewport.height,
-            index
+            viewport,
+            index,
+            resolved.rectSource
           );
           if (comment) {
             comments.push(comment);
           }
+        }
+      });
+      popups.forEach((entry, popupId) => {
+        if (usedPopups.has(popupId)) {
+          return;
+        }
+        const rectSource = entry.annotation.parentRect ?? entry.annotation.rect ?? null;
+        const comment = this.buildImportedComment(
+          entry.annotation,
+          pageNumber,
+          viewport,
+          entry.index,
+          rectSource
+        );
+        if (comment) {
+          comments.push(comment);
         }
       });
     }
@@ -467,6 +517,10 @@ export class PdfFacadeService {
     const pdfLib = await this.ensurePdfLib();
     const { PDFDocument, PDFName, PDFArray, PDFHexString } = pdfLib;
     const pdfDoc = await PDFDocument.load(this.originalFileBytes.slice(0));
+    const pdfjsDoc = this.pdfDoc();
+    if (!pdfjsDoc) {
+      throw new Error('PDF document is not loaded.');
+    }
     const pages = pdfDoc.getPages();
     const annotsByPage = new Map<number, PDFArray>();
 
@@ -491,16 +545,33 @@ export class PdfFacadeService {
       annots.push(annotRef);
     };
 
-    annotations.highlights.forEach((highlight) => {
+    const viewportCache = new Map<number, PageViewport>();
+    const resolveViewport = async (pageNumber: number): Promise<PageViewport | null> => {
+      const cached = viewportCache.get(pageNumber);
+      if (cached) {
+        return cached;
+      }
+      if (pageNumber <= 0 || pageNumber > pdfjsDoc.numPages) {
+        return null;
+      }
+      const page = await pdfjsDoc.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 1 });
+      viewportCache.set(pageNumber, viewport);
+      return viewport;
+    };
+
+    for (const highlight of annotations.highlights) {
       const pageIndex = highlight.page - 1;
       if (pageIndex < 0 || pageIndex >= pages.length) {
-        return;
+        continue;
       }
-      const page = pages[pageIndex];
-      const { width, height } = page.getSize();
-      const geometry = this.buildHighlightGeometry(highlight.rects, width, height);
+      const viewport = await resolveViewport(highlight.page);
+      if (!viewport) {
+        continue;
+      }
+      const geometry = this.buildHighlightGeometry(highlight.rects, viewport);
       if (!geometry) {
-        return;
+        continue;
       }
       const { rgb, alpha } = this.parseHighlightColor(highlight.color);
       const annot = pdfDoc.context.obj({
@@ -515,22 +586,27 @@ export class PdfFacadeService {
       if (highlight.contents?.trim()) {
         annot.set(PDFName.of('Contents'), PDFHexString.fromText(highlight.contents.trim()));
       }
+      if (highlight.subject?.trim()) {
+        annot.set(PDFName.of('Subj'), PDFHexString.fromText(highlight.subject.trim()));
+      }
       if (highlight.id) {
         annot.set(PDFName.of('NM'), PDFHexString.fromText(highlight.id));
       }
       appendAnnot(pageIndex, annot);
-    });
+    }
 
-    annotations.comments.forEach((comment) => {
+    for (const comment of annotations.comments) {
       const pageIndex = comment.page - 1;
       if (pageIndex < 0 || pageIndex >= pages.length) {
-        return;
+        continue;
       }
-      const page = pages[pageIndex];
-      const { width, height } = page.getSize();
-      const rect = this.buildCommentRect(comment, width, height);
+      const viewport = await resolveViewport(comment.page);
+      if (!viewport) {
+        continue;
+      }
+      const rect = this.buildCommentRect(comment, viewport);
       if (!rect) {
-        return;
+        continue;
       }
       const { title, contents } = this.buildCommentContents(comment);
       const annot = pdfDoc.context.obj({
@@ -546,7 +622,7 @@ export class PdfFacadeService {
       annot.set(PDFName.of('T'), PDFHexString.fromText(title));
       annot.set(PDFName.of('NM'), PDFHexString.fromText(comment.id));
       appendAnnot(pageIndex, annot);
-    });
+    }
 
     return pdfDoc.save();
   }
@@ -566,10 +642,9 @@ export class PdfFacadeService {
 
   private buildHighlightRectsFromAnnotation(
     annotation: PdfJsAnnotationData,
-    pageWidth: number,
-    pageHeight: number
+    viewport: PageViewport
   ): HighlightRect[] {
-    if (!pageWidth || !pageHeight) {
+    if (!viewport.width || !viewport.height) {
       return [];
     }
     const rects: HighlightRect[] = [];
@@ -577,19 +652,20 @@ export class PdfFacadeService {
     if (quadPoints.length >= 8) {
       for (let i = 0; i + 7 < quadPoints.length; i += 8) {
         const points = quadPoints.slice(i, i + 8);
-        if (points.some((value) => !Number.isFinite(value))) {
+        const quad: Array<[number, number]> = [];
+        let valid = true;
+        for (let j = 0; j < 8; j += 2) {
+          const [x, y] = viewport.convertToViewportPoint(points[j], points[j + 1]);
+          if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            valid = false;
+            break;
+          }
+          quad.push([x, y]);
+        }
+        if (!valid) {
           continue;
         }
-        const xs = [points[0], points[2], points[4], points[6]];
-        const ys = [points[1], points[3], points[5], points[7]];
-        const rect = this.normalizePdfRect(
-          Math.min(...xs),
-          Math.min(...ys),
-          Math.max(...xs),
-          Math.max(...ys),
-          pageWidth,
-          pageHeight
-        );
+        const rect = this.normalizeViewportRectFromPoints(quad, viewport);
         if (rect) {
           rects.push(rect);
         }
@@ -604,7 +680,13 @@ export class PdfFacadeService {
       const right = Math.max(rect[0], rect[2]);
       const bottom = Math.min(rect[1], rect[3]);
       const top = Math.max(rect[1], rect[3]);
-      const normalized = this.normalizePdfRect(left, bottom, right, top, pageWidth, pageHeight);
+      const corners: Array<[number, number]> = [
+        this.toPointTuple(viewport.convertToViewportPoint(left, bottom)),
+        this.toPointTuple(viewport.convertToViewportPoint(right, bottom)),
+        this.toPointTuple(viewport.convertToViewportPoint(right, top)),
+        this.toPointTuple(viewport.convertToViewportPoint(left, top))
+      ];
+      const normalized = this.normalizeViewportRectFromPoints(corners, viewport);
       if (normalized) {
         rects.push(normalized);
       }
@@ -612,30 +694,54 @@ export class PdfFacadeService {
     return rects;
   }
 
-  private normalizePdfRect(
-    left: number,
-    bottom: number,
-    right: number,
-    top: number,
-    pageWidth: number,
-    pageHeight: number
+  private normalizeViewportRectFromPoints(
+    points: Array<[number, number]>,
+    viewport: PageViewport
   ): HighlightRect | null {
-    if (!pageWidth || !pageHeight) {
+    if (!viewport.width || !viewport.height) {
       return null;
     }
-    const clampedLeft = this.clamp(left, 0, pageWidth);
-    const clampedRight = this.clamp(right, 0, pageWidth);
-    const clampedBottom = this.clamp(bottom, 0, pageHeight);
-    const clampedTop = this.clamp(top, 0, pageHeight);
-    if (clampedRight <= clampedLeft || clampedTop <= clampedBottom) {
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const [x, y] of points) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return null;
+      }
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+    return this.normalizeViewportRect(minX, minY, maxX, maxY, viewport);
+  }
+
+  private normalizeViewportRect(
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+    viewport: PageViewport
+  ): HighlightRect | null {
+    if (!viewport.width || !viewport.height) {
       return null;
     }
-    const width = clampedRight - clampedLeft;
-    const height = clampedTop - clampedBottom;
-    const leftPercent = (clampedLeft / pageWidth) * 100;
-    const topPercent = ((pageHeight - clampedTop) / pageHeight) * 100;
-    const widthPercent = (width / pageWidth) * 100;
-    const heightPercent = (height / pageHeight) * 100;
+    const width = viewport.width;
+    const height = viewport.height;
+    const clampedLeft = this.clamp(left, 0, width);
+    const clampedRight = this.clamp(right, 0, width);
+    const clampedTop = this.clamp(top, 0, height);
+    const clampedBottom = this.clamp(bottom, 0, height);
+    if (clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
+      return null;
+    }
+    const rectWidth = clampedRight - clampedLeft;
+    const rectHeight = clampedBottom - clampedTop;
+    const leftPercent = (clampedLeft / width) * 100;
+    const topPercent = (clampedTop / height) * 100;
+    const widthPercent = (rectWidth / width) * 100;
+    const heightPercent = (rectHeight / height) * 100;
     return {
       left: this.round4(leftPercent),
       top: this.round4(topPercent),
@@ -647,21 +753,40 @@ export class PdfFacadeService {
   private buildImportedComment(
     annotation: PdfJsAnnotationData,
     pageNumber: number,
-    pageWidth: number,
-    pageHeight: number,
-    index: number
+    viewport: PageViewport,
+    index: number,
+    rectOverride?: ArrayLike<number> | null
   ): CommentCard | null {
-    if (!pageWidth || !pageHeight) {
+    if (!viewport.width || !viewport.height) {
       return null;
     }
-    const rect = this.toNumberArray(annotation.rect);
+    const rect = this.toNumberArray(rectOverride ?? annotation.rect);
     if (rect.length < 4 || rect.slice(0, 4).some((value) => !Number.isFinite(value))) {
       return null;
     }
-    const centerX = (rect[0] + rect[2]) / 2;
-    const centerY = (rect[1] + rect[3]) / 2;
-    const anchorX = this.clamp(centerX / pageWidth, 0, 1);
-    const anchorY = this.clamp(1 - centerY / pageHeight, 0, 1);
+    const left = Math.min(rect[0], rect[2]);
+    const right = Math.max(rect[0], rect[2]);
+    const bottom = Math.min(rect[1], rect[3]);
+    const top = Math.max(rect[1], rect[3]);
+    const corners: Array<[number, number]> = [
+      this.toPointTuple(viewport.convertToViewportPoint(left, bottom)),
+      this.toPointTuple(viewport.convertToViewportPoint(right, bottom)),
+      this.toPointTuple(viewport.convertToViewportPoint(right, top)),
+      this.toPointTuple(viewport.convertToViewportPoint(left, top))
+    ];
+    const xs = corners.map(([x]) => x);
+    const ys = corners.map(([, y]) => y);
+    if (xs.some((value) => !Number.isFinite(value)) || ys.some((value) => !Number.isFinite(value))) {
+      return null;
+    }
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const anchorX = this.clamp(centerX / viewport.width, 0, 1);
+    const anchorY = this.clamp(centerY / viewport.height, 0, 1);
     const offsetX = anchorX > 0.6 ? -DEFAULT_IMPORTED_COMMENT_OFFSET : DEFAULT_IMPORTED_COMMENT_OFFSET;
     const offsetY = anchorY > 0.6 ? -DEFAULT_IMPORTED_COMMENT_OFFSET : DEFAULT_IMPORTED_COMMENT_OFFSET;
     const bubbleX = this.clamp(anchorX + offsetX, 0, 1);
@@ -735,6 +860,13 @@ export class PdfFacadeService {
     return Array.from(value).map((item) => Number(item));
   }
 
+  private toPointTuple(point: ArrayLike<number> | null | undefined): [number, number] {
+    if (!point || point.length < 2) {
+      return [Number.NaN, Number.NaN];
+    }
+    return [Number(point[0]), Number(point[1])];
+  }
+
   private buildRandomId(prefix: string): string {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return `${prefix}-${crypto.randomUUID()}`;
@@ -756,10 +888,9 @@ export class PdfFacadeService {
 
   private buildHighlightGeometry(
     rects: HighlightRect[],
-    pageWidth: number,
-    pageHeight: number
+    viewport: PageViewport
   ): { rect: number[]; quadPoints: number[] } | null {
-    if (!rects.length) {
+    if (!rects.length || !viewport.width || !viewport.height) {
       return null;
     }
     const quadPoints: number[] = [];
@@ -769,31 +900,38 @@ export class PdfFacadeService {
     let maxY = Number.NEGATIVE_INFINITY;
 
     rects.forEach((rect) => {
-      const left = (rect.left / 100) * pageWidth;
-      const right = ((rect.left + rect.width) / 100) * pageWidth;
-      const top = pageHeight - (rect.top / 100) * pageHeight;
-      const bottom = pageHeight - ((rect.top + rect.height) / 100) * pageHeight;
-      const clampedLeft = this.clamp(left, 0, pageWidth);
-      const clampedRight = this.clamp(right, 0, pageWidth);
-      const clampedTop = this.clamp(top, 0, pageHeight);
-      const clampedBottom = this.clamp(bottom, 0, pageHeight);
-      if (clampedRight <= clampedLeft || clampedTop <= clampedBottom) {
+      const left = (rect.left / 100) * viewport.width;
+      const right = ((rect.left + rect.width) / 100) * viewport.width;
+      const top = (rect.top / 100) * viewport.height;
+      const bottom = ((rect.top + rect.height) / 100) * viewport.height;
+      const clampedLeft = this.clamp(left, 0, viewport.width);
+      const clampedRight = this.clamp(right, 0, viewport.width);
+      const clampedTop = this.clamp(top, 0, viewport.height);
+      const clampedBottom = this.clamp(bottom, 0, viewport.height);
+      if (clampedRight <= clampedLeft || clampedBottom <= clampedTop) {
         return;
       }
-      quadPoints.push(
-        clampedLeft,
-        clampedTop,
-        clampedRight,
-        clampedTop,
-        clampedLeft,
-        clampedBottom,
-        clampedRight,
-        clampedBottom
-      );
-      minX = Math.min(minX, clampedLeft);
-      minY = Math.min(minY, clampedBottom);
-      maxX = Math.max(maxX, clampedRight);
-      maxY = Math.max(maxY, clampedTop);
+      const [x1, y1] = viewport.convertToPdfPoint(clampedLeft, clampedTop);
+      const [x2, y2] = viewport.convertToPdfPoint(clampedRight, clampedTop);
+      const [x3, y3] = viewport.convertToPdfPoint(clampedLeft, clampedBottom);
+      const [x4, y4] = viewport.convertToPdfPoint(clampedRight, clampedBottom);
+      if (
+        !Number.isFinite(x1) ||
+        !Number.isFinite(y1) ||
+        !Number.isFinite(x2) ||
+        !Number.isFinite(y2) ||
+        !Number.isFinite(x3) ||
+        !Number.isFinite(y3) ||
+        !Number.isFinite(x4) ||
+        !Number.isFinite(y4)
+      ) {
+        return;
+      }
+      quadPoints.push(x1, y1, x2, y2, x3, y3, x4, y4);
+      minX = Math.min(minX, x1, x2, x3, x4);
+      minY = Math.min(minY, y1, y2, y3, y4);
+      maxX = Math.max(maxX, x1, x2, x3, x4);
+      maxY = Math.max(maxY, y1, y2, y3, y4);
     });
 
     if (!quadPoints.length) {
@@ -805,21 +943,38 @@ export class PdfFacadeService {
 
   private buildCommentRect(
     comment: CommentCard,
-    pageWidth: number,
-    pageHeight: number
+    viewport: PageViewport
   ): number[] | null {
-    if (!Number.isFinite(comment.anchorX) || !Number.isFinite(comment.anchorY)) {
+    if (
+      !Number.isFinite(comment.anchorX) ||
+      !Number.isFinite(comment.anchorY) ||
+      !viewport.width ||
+      !viewport.height
+    ) {
       return null;
     }
     const anchorX = this.clamp(comment.anchorX, 0, 1);
     const anchorY = this.clamp(comment.anchorY, 0, 1);
-    const x = anchorX * pageWidth;
-    const y = (1 - anchorY) * pageHeight;
-    const iconSize = Math.min(DEFAULT_COMMENT_ICON_SIZE, pageWidth, pageHeight);
+    const x = anchorX * viewport.width;
+    const y = anchorY * viewport.height;
+    const iconSize = Math.min(DEFAULT_COMMENT_ICON_SIZE, viewport.width, viewport.height);
     const half = iconSize / 2;
-    const left = this.clamp(x - half, 0, Math.max(0, pageWidth - iconSize));
-    const bottom = this.clamp(y - half, 0, Math.max(0, pageHeight - iconSize));
-    return [left, bottom, left + iconSize, bottom + iconSize];
+    const left = this.clamp(x - half, 0, Math.max(0, viewport.width - iconSize));
+    const top = this.clamp(y - half, 0, Math.max(0, viewport.height - iconSize));
+    const right = left + iconSize;
+    const bottom = top + iconSize;
+    const corners: Array<[number, number]> = [
+      this.toPointTuple(viewport.convertToPdfPoint(left, top)),
+      this.toPointTuple(viewport.convertToPdfPoint(right, top)),
+      this.toPointTuple(viewport.convertToPdfPoint(left, bottom)),
+      this.toPointTuple(viewport.convertToPdfPoint(right, bottom))
+    ];
+    const xs = corners.map(([x]) => x);
+    const ys = corners.map(([, y]) => y);
+    if (xs.some((value) => !Number.isFinite(value)) || ys.some((value) => !Number.isFinite(value))) {
+      return null;
+    }
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
   }
 
   private buildCommentContents(comment: CommentCard): { title: string; contents: string } {

@@ -243,7 +243,6 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   protected readonly currentPage = signal(1);
   protected readonly pageInput = signal('1');
   protected readonly pageSliderValue = signal(1);
-  protected readonly isJumping = signal(false);
   protected readonly contextMenu = signal<ContextMenuState>({
     visible: false,
     x: 0,
@@ -415,6 +414,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   private compareScrollContainer: HTMLElement | null = null;
   private pdfScrollRaf: number | null = null;
   private compareScrollRaf: number | null = null;
+  private domSyncRaf: number | null = null;
+  private compareDomSyncRaf: number | null = null;
+  private overlayResizeObserver: ResizeObserver | null = null;
   private pageSliderAnimationRaf: number | null = null;
   private pageSliderInputRaf: number | null = null;
   private pendingPageSliderValue: number | null = null;
@@ -423,7 +425,6 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   private isSyncingScroll = false;
   private dragState: DragState | null = null;
   private dockResizeState: DockResizeState | null = null;
-  private jumpTargetPage: number | null = null;
   private dragCounter = 0;
   protected readonly isBrowser: boolean;
 
@@ -528,9 +529,12 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.setupFileDropListeners();
     this.setupGlobalKeyListeners();
     this.setupGlobalClickListeners();
+    this.refreshOverlayResizeObserver();
   }
 
   ngOnDestroy(): void {
+    this.teardownOverlayResizeObserver();
+    this.teardownDomSyncRafs();
     this.teardownScrollListeners();
     this.teardownDragListeners();
     this.teardownFileDropListeners();
@@ -785,7 +789,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       this.renderedCanvasPages.add(pageNumber);
     }
 
-    this.syncDomRefs();
+    this.scheduleDomSync('base');
   }
 
   private async renderComparePages(token: number): Promise<void> {
@@ -838,15 +842,15 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       this.renderedCompareCanvasPages.add(pageNumber);
     }
 
-    this.syncCompareDomRefs();
+    this.scheduleDomSync('compare');
   }
 
   protected onPageRendered(_event: CustomEvent): void {
-    this.syncDomRefs();
+    this.scheduleDomSync('base');
   }
 
   protected onComparePageRendered(_event: CustomEvent): void {
-    this.syncCompareDomRefs();
+    this.scheduleDomSync('compare');
   }
 
   protected onTextLayerRendered(event: CustomEvent): void {
@@ -1424,6 +1428,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
 
   protected onPageSliderPointerUp(): void {
     this.isPageSliderDragging = false;
+    this.cancelPageSliderInputRaf(true);
+    this.updateCurrentPageFromScroll();
   }
 
   protected onPageSliderInput(event: Event): void {
@@ -1440,6 +1446,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
 
     if (!this.isBrowser) {
       this.pageSliderValue.set(clamped);
+      this.currentPage.set(snapped);
       this.pageInput.set(String(snapped));
       return;
     }
@@ -1455,13 +1462,17 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       const pendingSnapped = this.pendingPageSliderSnapped;
       this.pendingPageSliderValue = null;
       this.pendingPageSliderSnapped = null;
-      if (pendingValue === null || pendingSnapped === null) {
-        return;
-      }
-      this.pageSliderValue.set(pendingValue);
-      this.pageInput.set(String(pendingSnapped));
-    });
-  }
+       if (pendingValue === null || pendingSnapped === null) {
+         return;
+       }
+       this.pageSliderValue.set(pendingValue);
+       this.currentPage.set(pendingSnapped);
+       this.pageInput.set(String(pendingSnapped));
+       if (!this.scrollToPageValue(pendingValue, 'auto')) {
+         this.scrollToPage(pendingSnapped, 'auto');
+       }
+     });
+   }
 
   protected onPageSliderChange(event: Event): void {
     if (!this.hasPdf()) {
@@ -1474,8 +1485,13 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       this.syncPageInput();
       return;
     }
-    const snapped = this.clampPageNumber(Math.round(value));
-    this.jumpToPage(snapped);
+    const clamped = this.clampSliderValue(value);
+    const snapped = this.clampPageNumber(Math.round(clamped));
+    if (!this.scrollToPageValue(clamped, 'auto')) {
+      this.scrollToPage(snapped, 'auto');
+    }
+    this.setCurrentPage(snapped, { updateInput: true, sliderValue: clamped, sliderMode: 'immediate' });
+    this.updateCurrentPageFromScroll();
   }
 
   protected async zoomIn(): Promise<void> {
@@ -1519,13 +1535,17 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
         if (!marker.rects.length) {
           return;
         }
-        const contents = marker.text?.trim() || marker.label?.trim() || undefined;
+        const label = marker.label?.trim() ?? '';
+        const text = marker.text?.trim() ?? '';
+        const contents = label || text || undefined;
+        const subject = text && text !== label ? text : undefined;
         highlights.push({
           id: marker.id,
           page: marker.page,
           rects: marker.rects,
           color: marker.color,
-          contents
+          contents,
+          subject
         });
       });
     }
@@ -1593,8 +1613,10 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     const state = this.contextMenu();
     const color = this.selectedHighlightColor();
     const highlightText = state.selectionText?.trim() || undefined;
-    const selectionRects = state.selectionRects.filter((section) => section.rects.length > 0);
-    if (selectionRects.length > 0) {
+    const selectionRects = state.selectionRects
+      .map((section) => ({ ...section, rects: this.sanitizeHighlightRects(section.rects) }))
+      .filter((section) => section.rects.length > 0);
+    if (selectionRects.length > 1) {
       selectionRects.forEach((section) => {
         this.annotations.addMarker(section.pageNumber, section.rects, '', color, 'selection', highlightText);
       });
@@ -1602,7 +1624,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       this.closeContextMenu();
       return;
     }
-    const selectionPageNumber = state.selectionPageNumber;
+    const selectionPageNumber =
+      selectionRects.length === 1 ? selectionRects[0].pageNumber : state.selectionPageNumber;
     if (!selectionPageNumber) {
       return;
     }
@@ -1641,21 +1664,40 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       this.closeContextMenu();
       return;
     }
+    let layout = this.textLayouts.get(selectionPageNumber) ?? null;
+    if (!layout && layer) {
+      layout = this.captureTextLayoutFromDom(selectionPageNumber, layer, pageElement ?? undefined);
+      if (layout) {
+        this.textLayouts.set(selectionPageNumber, layout);
+        this.renderedTextLayers.add(selectionPageNumber);
+      }
+    }
     const highlightTextFallback = state.selectionText?.trim() ?? (selection ? selection.toString().trim() : '');
     const offsets =
       state.selectionOffsets ??
       (selection ? this.getSelectionOffsets(selectionPageNumber, selection) : null);
-    let range: Range | null = null;
-    if (offsets && layer) {
-      range = this.createRangeFromOffsets(layer, offsets.start, offsets.end);
-    } else if (selection?.rangeCount) {
-      range = selection.getRangeAt(0);
+    const validOffsets = offsets && offsets.start < offsets.end ? offsets : null;
+    let rects: HighlightRect[] = [];
+    if (validOffsets && layout) {
+      rects = this.rectsFromOffsetsInLayout(layout, validOffsets.start, validOffsets.end);
     }
-    if (!range || range.collapsed) {
-      this.closeContextMenu();
-      return;
+    if (!rects.length) {
+      let range: Range | null = null;
+      if (validOffsets && layer) {
+        range = this.createRangeFromOffsets(layer, validOffsets.start, validOffsets.end);
+      } else if (selection?.rangeCount) {
+        range = selection.getRangeAt(0);
+      }
+      if (!range || range.collapsed) {
+        this.closeContextMenu();
+        return;
+      }
+      rects = this.rectsFromRange(range, pageElement);
     }
-    const rects = this.rectsFromRange(range, pageElement);
+    if (!rects.length && selectionRects.length === 1) {
+      rects = selectionRects[0].rects;
+    }
+    rects = this.sanitizeHighlightRects(rects);
     if (rects.length === 0) {
       this.closeContextMenu();
       return;
@@ -2633,7 +2675,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return new DOMRect(left, top, right - left, bottom - top);
   }
 
-  private scrollToPage(pageNumber: number): boolean {
+  private scrollToPage(pageNumber: number, behavior: ScrollBehavior = 'smooth'): boolean {
     const pageElement = this.resolvePageElement(
       pageNumber,
       this.pageElementMap,
@@ -2645,14 +2687,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     const rect = pageElement.getBoundingClientRect();
     const scrollContainer =
       this.pdfScrollContainer ?? this.resolveScrollContainer(this.pdfViewerHost?.nativeElement);
-    if (this.scrollViewerToRect(rect, scrollContainer)) {
+    if (this.scrollViewerToRect(rect, scrollContainer, behavior)) {
       return true;
     }
-    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    pageElement.scrollIntoView({ behavior, block: 'center', inline: 'center' });
     return true;
   }
 
-  private scrollToComparePage(pageNumber: number): boolean {
+  private scrollToComparePage(pageNumber: number, behavior: ScrollBehavior = 'smooth'): boolean {
     const pageElement = this.resolvePageElement(
       pageNumber,
       this.comparePageElementMap,
@@ -2665,16 +2707,34 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     const scrollContainer =
       this.compareScrollContainer ??
       this.resolveScrollContainer(this.comparePdfViewerHost?.nativeElement);
-    if (this.scrollViewerToRect(rect, scrollContainer)) {
+    if (this.scrollViewerToRect(rect, scrollContainer, behavior)) {
       return true;
     }
-    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    pageElement.scrollIntoView({ behavior, block: 'center', inline: 'center' });
+    return true;
+  }
+
+  private scrollToPageValue(pageValue: number, behavior: ScrollBehavior = 'auto'): boolean {
+    if (!this.isBrowser) {
+      return false;
+    }
+    const container = this.pdfScrollContainer ?? this.resolveScrollContainer(this.pdfViewerHost?.nativeElement);
+    if (!container) {
+      return false;
+    }
+    const overlays = this.pageOverlays();
+    const nextTop = this.resolveScrollTopForPageValue(overlays, pageValue, container);
+    if (nextTop === null) {
+      return false;
+    }
+    container.scrollTo({ left: container.scrollLeft, top: nextTop, behavior });
     return true;
   }
 
   private scrollViewerToRect(
     rect: DOMRect | null,
-    containerOverride?: HTMLElement | null
+    containerOverride?: HTMLElement | null,
+    behavior: ScrollBehavior = 'smooth'
   ): boolean {
     if (!this.isBrowser) {
       return false;
@@ -2700,7 +2760,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     const desiredCenterY = container.clientHeight / 2;
     const nextLeft = this.clamp(targetCenterX - desiredCenterX, 0, maxScrollLeft);
     const nextTop = this.clamp(targetCenterY - desiredCenterY, 0, maxScrollTop);
-    container.scrollTo({ left: nextLeft, top: nextTop, behavior: 'smooth' });
+    container.scrollTo({ left: nextLeft, top: nextTop, behavior });
     return true;
   }
 
@@ -2709,7 +2769,85 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return Boolean(target?.closest('button, input, textarea, select, option'));
   }
 
+  private scheduleDomSync(kind: 'base' | 'compare'): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    const current = kind === 'base' ? this.domSyncRaf : this.compareDomSyncRaf;
+    if (current !== null) {
+      return;
+    }
+    const rafId = requestAnimationFrame(() => {
+      if (kind === 'base') {
+        this.domSyncRaf = null;
+        this.syncDomRefs();
+        return;
+      }
+      this.compareDomSyncRaf = null;
+      this.syncCompareDomRefs();
+    });
+    if (kind === 'base') {
+      this.domSyncRaf = rafId;
+    } else {
+      this.compareDomSyncRaf = rafId;
+    }
+  }
+
+  private refreshOverlayResizeObserver(): void {
+    if (!this.isBrowser || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    if (!this.overlayResizeObserver) {
+      this.overlayResizeObserver = new ResizeObserver((entries) => {
+        const baseHost = this.pdfViewerHost?.nativeElement;
+        const basePages = this.pagesHost?.nativeElement;
+        const compareHost = this.comparePdfViewerHost?.nativeElement;
+        const comparePages = this.comparePagesHost?.nativeElement;
+        let baseTouched = false;
+        let compareTouched = false;
+        for (const entry of entries) {
+          const target = entry.target as HTMLElement;
+          if (target === baseHost || target === basePages) {
+            baseTouched = true;
+          }
+          if (target === compareHost || target === comparePages) {
+            compareTouched = true;
+          }
+        }
+        if (baseTouched) {
+          this.scheduleDomSync('base');
+        }
+        if (compareTouched) {
+          this.scheduleDomSync('compare');
+        }
+      });
+    }
+    this.overlayResizeObserver.disconnect();
+    const baseHost = this.pdfViewerHost?.nativeElement;
+    const basePages = this.pagesHost?.nativeElement;
+    const compareHost = this.comparePdfViewerHost?.nativeElement;
+    const comparePages = this.comparePagesHost?.nativeElement;
+    if (baseHost) {
+      this.overlayResizeObserver.observe(baseHost);
+    }
+    if (basePages) {
+      this.overlayResizeObserver.observe(basePages);
+    }
+    if (compareHost) {
+      this.overlayResizeObserver.observe(compareHost);
+    }
+    if (comparePages) {
+      this.overlayResizeObserver.observe(comparePages);
+    }
+  }
+
+  private teardownOverlayResizeObserver(): void {
+    this.overlayResizeObserver?.disconnect();
+    this.overlayResizeObserver = null;
+  }
+
   private syncDomRefs(): void {
+    this.refreshOverlayResizeObserver();
     this.pageElementMap.clear();
     this.bindScrollContainer('base');
     const scrollOffsets = this.getScrollOffsets(this.pdfScrollContainer);
@@ -2724,6 +2862,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   private syncCompareDomRefs(): void {
+    this.refreshOverlayResizeObserver();
     this.comparePageElementMap.clear();
     this.bindScrollContainer('compare');
     const scrollOffsets = this.getScrollOffsets(this.compareScrollContainer);
@@ -2806,23 +2945,39 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!container) {
       return;
     }
+    if (container.clientHeight <= 0) {
+      return;
+    }
     const overlays = this.pageOverlays();
-    if (!overlays.length) {
-      return;
-    }
+    const shouldUpdateInput = !this.isPageInputFocused();
     const centerY = container.scrollTop + container.clientHeight / 2;
-    const nextPage = this.resolveClosestPageNumber(overlays, centerY);
-    if (!nextPage) {
+    if (!overlays.length) {
+      const fallbackPage = this.resolveClosestPageNumberFromDom(container);
+      if (!fallbackPage) {
+        return;
+      }
+      this.setCurrentPage(fallbackPage, {
+        updateInput: shouldUpdateInput,
+        sliderValue: fallbackPage,
+        sliderMode: 'immediate'
+      });
       return;
     }
-    if (this.isJumping() && this.jumpTargetPage === nextPage) {
-      this.isJumping.set(false);
-      this.jumpTargetPage = null;
+    const state = this.resolveScrollPageState(overlays, centerY);
+    if (!state) {
+      return;
     }
-    this.setCurrentPage(nextPage);
+    this.setCurrentPage(state.pageNumber, {
+      updateInput: shouldUpdateInput,
+      sliderValue: state.sliderValue,
+      sliderMode: 'immediate'
+    });
   }
 
-  private resolveClosestPageNumber(overlays: PageOverlay[], centerY: number): number | null {
+  private resolveScrollPageState(
+    overlays: PageOverlay[],
+    centerY: number
+  ): { pageNumber: number; sliderValue: number } | null {
     if (!overlays.length) {
       return null;
     }
@@ -2830,7 +2985,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     let high = overlays.length - 1;
     while (low <= high) {
       const mid = Math.floor((low + high) / 2);
-      if (overlays[mid].top <= centerY) {
+      const midCenter = overlays[mid].top + overlays[mid].height / 2;
+      if (midCenter <= centerY) {
         low = mid + 1;
       } else {
         high = mid - 1;
@@ -2842,9 +2998,88 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     const right = overlays[rightIndex];
     const leftCenter = left.top + left.height / 2;
     const rightCenter = right.top + right.height / 2;
-    return Math.abs(centerY - leftCenter) <= Math.abs(centerY - rightCenter)
-      ? left.pageNumber
-      : right.pageNumber;
+    if (!Number.isFinite(leftCenter) || !Number.isFinite(rightCenter)) {
+      return null;
+    }
+    if (leftIndex === rightIndex || rightCenter === leftCenter) {
+      return { pageNumber: left.pageNumber, sliderValue: left.pageNumber };
+    }
+    const t = this.clamp((centerY - leftCenter) / (rightCenter - leftCenter), 0, 1);
+    const sliderValue = left.pageNumber + (right.pageNumber - left.pageNumber) * t;
+    const pageNumber =
+      Math.abs(centerY - leftCenter) <= Math.abs(centerY - rightCenter)
+        ? left.pageNumber
+        : right.pageNumber;
+    return { pageNumber, sliderValue };
+  }
+
+  private resolveScrollTopForPageValue(
+    overlays: PageOverlay[],
+    pageValue: number,
+    container: HTMLElement
+  ): number | null {
+    if (!overlays.length || container.clientHeight <= 0) {
+      return null;
+    }
+    const pageCount = this.pdf.pageCount();
+    if (pageCount <= 0) {
+      return 0;
+    }
+    const clampedValue = this.clampSliderValue(pageValue);
+    const leftPage = this.clampPageNumber(Math.floor(clampedValue));
+    const rightPage = this.clampPageNumber(leftPage + 1);
+    const leftOverlay = overlays[leftPage - 1];
+    if (!leftOverlay || leftOverlay.pageNumber !== leftPage) {
+      return null;
+    }
+    const leftCenter = leftOverlay.top + leftOverlay.height / 2;
+    if (!Number.isFinite(leftCenter)) {
+      return null;
+    }
+    let desiredCenterY = leftCenter;
+    if (rightPage !== leftPage) {
+      const rightOverlay = overlays[rightPage - 1];
+      if (!rightOverlay || rightOverlay.pageNumber !== rightPage) {
+        return null;
+      }
+      const rightCenter = rightOverlay.top + rightOverlay.height / 2;
+      if (!Number.isFinite(rightCenter)) {
+        return null;
+      }
+      const t = this.clamp(clampedValue - leftPage, 0, 1);
+      desiredCenterY = leftCenter + (rightCenter - leftCenter) * t;
+    }
+    const maxScrollTop = Math.max(container.scrollHeight - container.clientHeight, 0);
+    const rawTop = desiredCenterY - container.clientHeight / 2;
+    return this.clamp(rawTop, 0, maxScrollTop);
+  }
+
+  private resolveClosestPageNumberFromDom(container: HTMLElement): number | null {
+    const pageElements = this.collectPdfPageElements(this.pdfViewerHost?.nativeElement);
+    if (!pageElements.length) {
+      return null;
+    }
+    const containerRect = container.getBoundingClientRect();
+    const centerY = containerRect.top + container.clientHeight / 2;
+    let bestPage: number | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const pageElement of pageElements) {
+      const pageNumber = this.readPageNumber(pageElement);
+      if (!pageNumber) {
+        continue;
+      }
+      const rect = pageElement.getBoundingClientRect();
+      if (!rect.height) {
+        continue;
+      }
+      const pageCenter = rect.top + rect.height / 2;
+      const distance = Math.abs(centerY - pageCenter);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestPage = pageNumber;
+      }
+    }
+    return bestPage;
   }
 
   private resolveScrollContainer(viewerHost: HTMLElement | undefined): HTMLElement | null {
@@ -2881,7 +3116,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     const container = kind === 'base' ? this.pdfScrollContainer : this.compareScrollContainer;
     const pagesHost =
       kind === 'base' ? this.pagesHost?.nativeElement : this.comparePagesHost?.nativeElement;
-    if (!container || !pagesHost) {
+    if (!container) {
       return;
     }
     const currentRaf = kind === 'base' ? this.pdfScrollRaf : this.compareScrollRaf;
@@ -2894,7 +3129,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       } else {
         this.compareScrollRaf = null;
       }
-      this.updateScrollOffsets(container, pagesHost);
+      if (pagesHost) {
+        this.updateScrollOffsets(container, pagesHost);
+      }
       if (kind === 'base') {
         this.updateCurrentPageFromScroll();
       }
@@ -3033,6 +3270,20 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.cancelPageSliderInputRaf(false);
   }
 
+  private teardownDomSyncRafs(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    if (this.domSyncRaf !== null) {
+      cancelAnimationFrame(this.domSyncRaf);
+      this.domSyncRaf = null;
+    }
+    if (this.compareDomSyncRaf !== null) {
+      cancelAnimationFrame(this.compareDomSyncRaf);
+      this.compareDomSyncRaf = null;
+    }
+  }
+
   private cancelPageSliderAnimationRaf(): void {
     if (!this.isBrowser) {
       return;
@@ -3057,7 +3308,11 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.pendingPageSliderSnapped = null;
     if (flush && pendingValue !== null && pendingSnapped !== null) {
       this.pageSliderValue.set(pendingValue);
+      this.currentPage.set(pendingSnapped);
       this.pageInput.set(String(pendingSnapped));
+      if (!this.scrollToPageValue(pendingValue, 'auto')) {
+        this.scrollToPage(pendingSnapped, 'auto');
+      }
     }
   }
 
@@ -3106,19 +3361,35 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.pageSliderAnimationRaf = requestAnimationFrame(tick);
   }
 
-  private setCurrentPage(pageNumber: number): void {
-    const clamped = this.clampPageNumber(pageNumber);
-    const sliderMatches = Math.abs(this.pageSliderValue() - clamped) < 0.001;
+  private setCurrentPage(
+    pageNumber: number,
+    options: {
+      updateInput?: boolean;
+      sliderValue?: number;
+      sliderMode?: 'immediate' | 'animate';
+    } = {}
+  ): void {
+    const clampedPage = this.clampPageNumber(pageNumber);
+    const sliderValue = this.clampSliderValue(options.sliderValue ?? clampedPage);
+    const updateInput = options.updateInput ?? true;
+    const sliderMode = options.sliderMode ?? 'animate';
+    const nextInput = String(clampedPage);
+    const sliderMatches = Math.abs(this.pageSliderValue() - sliderValue) < 0.001;
+    const inputMatches = this.pageInput() === nextInput;
     if (
-      this.currentPage() === clamped &&
-      this.pageInput() === String(clamped) &&
+      this.currentPage() === clampedPage &&
+      (!updateInput || inputMatches) &&
       sliderMatches
     ) {
       return;
     }
-    this.currentPage.set(clamped);
-    this.pageInput.set(String(clamped));
-    this.setPageSliderValue(clamped, 'animate');
+    if (this.currentPage() !== clampedPage) {
+      this.currentPage.set(clampedPage);
+    }
+    if (updateInput && !inputMatches) {
+      this.pageInput.set(nextInput);
+    }
+    this.setPageSliderValue(sliderValue, sliderMode);
   }
 
   protected jumpToPage(pageNumber: number): void {
@@ -3126,19 +3397,34 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       return;
     }
     const clamped = this.clampPageNumber(pageNumber);
-    this.isJumping.set(true);
-    this.jumpTargetPage = clamped;
-    this.setCurrentPage(clamped);
-    const scrolled = this.scrollToPage(clamped);
-    if (!scrolled) {
-      this.isJumping.set(false);
-      this.jumpTargetPage = null;
+    const current = this.currentPage();
+    const deltaPages = Math.abs(clamped - current);
+    const behavior: ScrollBehavior =
+      this.prefersReducedMotion() || deltaPages > 2 ? 'auto' : 'smooth';
+    this.setCurrentPage(clamped, { updateInput: true, sliderValue: clamped, sliderMode: 'animate' });
+    const scrolled = this.scrollToPageValue(clamped, behavior) || this.scrollToPage(clamped, behavior);
+    if (scrolled) {
+      this.updateCurrentPageFromScroll();
     }
   }
 
   private syncPageInput(): void {
     const current = this.currentPage();
     this.pageInput.set(String(current));
+    const container = this.pdfScrollContainer;
+    const overlays = this.pageOverlays();
+    if (container && overlays.length) {
+      const centerY = container.scrollTop + container.clientHeight / 2;
+      const state = this.resolveScrollPageState(overlays, centerY);
+      if (state) {
+        this.setCurrentPage(state.pageNumber, {
+          updateInput: true,
+          sliderValue: state.sliderValue,
+          sliderMode: 'immediate'
+        });
+        return;
+      }
+    }
     this.setPageSliderValue(current, 'immediate');
   }
 
@@ -3168,6 +3454,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return normalized;
   }
 
+  private isPageInputFocused(): boolean {
+    if (!this.isBrowser || typeof document === 'undefined') {
+      return false;
+    }
+    const input = this.pageInputField?.nativeElement;
+    return Boolean(input && document.activeElement === input);
+  }
+
   private readRangeValue(event: Event): number | null {
     const target = event.target as HTMLInputElement | null;
     if (!target) {
@@ -3182,8 +3476,6 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.currentPage.set(1);
     this.pageInput.set('1');
     this.pageSliderValue.set(1);
-    this.isJumping.set(false);
-    this.jumpTargetPage = null;
   }
 
   private resolvePageNumberFromEvent(
@@ -3458,7 +3750,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     });
 
     return Array.from(grouped.entries())
-      .map(([pageNumber, rects]) => ({ pageNumber, rects }))
+      .map(([pageNumber, rects]) => ({ pageNumber, rects: this.sanitizeHighlightRects(rects) }))
+      .filter((section) => section.rects.length > 0)
       .sort((a, b) => a.pageNumber - b.pageNumber);
   }
 
@@ -3633,6 +3926,83 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return rects.filter((rect) => rect.width > 0 && rect.height > 0);
   }
 
+  private sanitizeHighlightRects(rects: HighlightRect[]): HighlightRect[] {
+    if (!rects.length) {
+      return [];
+    }
+    const round4 = (value: number): number => Number(value.toFixed(4));
+    const normalized = rects
+      .map((rect) => {
+        const left = this.clamp(rect.left, 0, 100);
+        const top = this.clamp(rect.top, 0, 100);
+        const right = this.clamp(rect.left + rect.width, 0, 100);
+        const bottom = this.clamp(rect.top + rect.height, 0, 100);
+        const width = right - left;
+        const height = bottom - top;
+        if (width <= 0 || height <= 0) {
+          return null;
+        }
+        return {
+          left: round4(left),
+          top: round4(top),
+          width: round4(width),
+          height: round4(height)
+        };
+      })
+      .filter((rect): rect is HighlightRect => Boolean(rect));
+    if (!normalized.length) {
+      return [];
+    }
+    normalized.sort((a, b) => (a.top === b.top ? a.left - b.left : a.top - b.top));
+    const merged: HighlightRect[] = [];
+    const nearlyEqual = (a: number, b: number): boolean => Math.abs(a - b) <= 0.05;
+    const isSameLine = (a: HighlightRect, b: HighlightRect): boolean => {
+      const aBottom = a.top + a.height;
+      const bBottom = b.top + b.height;
+      const overlap = Math.min(aBottom, bBottom) - Math.max(a.top, b.top);
+      if (overlap <= 0) {
+        return false;
+      }
+      const minHeight = Math.min(a.height, b.height);
+      return overlap / minHeight >= 0.6;
+    };
+    const mergeRects = (a: HighlightRect, b: HighlightRect): HighlightRect => {
+      const left = Math.min(a.left, b.left);
+      const top = Math.min(a.top, b.top);
+      const right = Math.max(a.left + a.width, b.left + b.width);
+      const bottom = Math.max(a.top + a.height, b.top + b.height);
+      return {
+        left: round4(left),
+        top: round4(top),
+        width: round4(right - left),
+        height: round4(bottom - top)
+      };
+    };
+    for (const rect of normalized) {
+      const last = merged[merged.length - 1];
+      if (!last) {
+        merged.push(rect);
+        continue;
+      }
+      if (
+        nearlyEqual(rect.left, last.left) &&
+        nearlyEqual(rect.top, last.top) &&
+        nearlyEqual(rect.width, last.width) &&
+        nearlyEqual(rect.height, last.height)
+      ) {
+        continue;
+      }
+      const gapTolerance = Math.max(0.1, Math.min(rect.height, last.height) * 0.2);
+      const gap = rect.left - (last.left + last.width);
+      if (gap <= gapTolerance && isSameLine(rect, last)) {
+        merged[merged.length - 1] = mergeRects(last, rect);
+        continue;
+      }
+      merged.push(rect);
+    }
+    return merged;
+  }
+
   private rectsFromRange(range: Range, pageElement: HTMLElement): HighlightRect[] {
     const containerRect = this.resolvePageContentRect(pageElement);
     if (!containerRect) {
@@ -3644,6 +4014,19 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   private resolvePageContentRect(pageElement: HTMLElement): DOMRect | null {
+    const canvas = pageElement.querySelector('canvas') as HTMLCanvasElement | null;
+    if (canvas) {
+      const canvasRect = canvas.getBoundingClientRect();
+      if (canvasRect.width && canvasRect.height) {
+        const width = canvas.clientWidth || canvasRect.width;
+        const height = canvas.clientHeight || canvasRect.height;
+        if (width && height) {
+          const left = canvasRect.left + canvas.clientLeft;
+          const top = canvasRect.top + canvas.clientTop;
+          return new DOMRect(left, top, width, height);
+        }
+      }
+    }
     const rect = pageElement.getBoundingClientRect();
     if (!rect.width || !rect.height) {
       return null;
