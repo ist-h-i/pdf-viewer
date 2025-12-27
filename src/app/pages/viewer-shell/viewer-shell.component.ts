@@ -2069,6 +2069,22 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     }
   }
 
+  protected async deleteLibraryItem(id: string): Promise<void> {
+    const beforeSelectedId = this.library.selectedId();
+    await this.library.remove(id);
+    if (this.library.selectedId() !== beforeSelectedId) {
+      this.afterLibrarySelection();
+    }
+  }
+
+  protected async deleteAllLibraryItems(): Promise<void> {
+    if (!this.library.items().length) {
+      return;
+    }
+    await this.library.clear();
+    this.afterLibrarySelection();
+  }
+
   protected async selectPrevPdf(): Promise<void> {
     if (!this.library.hasPrev()) {
       return;

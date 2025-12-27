@@ -76,6 +76,27 @@ export class PdfFacadeService {
     this.error.set(message);
   }
 
+  async reset(): Promise<void> {
+    const doc = this.pdfDoc();
+    this.pdfDoc.set(null);
+    this.pages.set([]);
+    this.loading.set(false);
+    this.error.set(null);
+    this.currentName.set(null);
+    this.textCache.clear();
+    this.textLayouts.clear();
+    this.originalFileBytes = null;
+    this.revokeSourceUrl();
+    this.currentSourceUrl = null;
+    if (doc) {
+      try {
+        await doc.destroy();
+      } catch (err) {
+        console.warn('Failed to destroy PDF document.', err);
+      }
+    }
+  }
+
   async loadBytes(bytes: ArrayBuffer, name: string, mimeType = 'application/pdf'): Promise<void> {
     this.loading.set(true);
     this.error.set(null);

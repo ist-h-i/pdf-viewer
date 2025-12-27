@@ -270,7 +270,17 @@
           <section class="viewer-shell__panel">
             <div class="viewer-shell__panel-header">
               <h3 class="viewer-shell__panel-title">ライブラリ</h3>
-              <span class="viewer-shell__badge">{{ library.items().length }}件</span>
+              <div class="viewer-shell__panel-actions">
+                <span class="viewer-shell__badge">{{ library.items().length }}件</span>
+                <button
+                  type="button"
+                  class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger viewer-shell__button--compact"
+                  (click)="deleteAllLibraryItems()"
+                  [disabled]="!library.items().length"
+                >
+                  全削除
+                </button>
+              </div>
             </div>
             <div class="viewer-shell__panel-body">
               @if (!library.items().length) {
@@ -280,35 +290,46 @@
               } @else {
                 <div class="viewer-shell__library-list">
                   @for (item of library.items(); track item.id) {
-                    <button
-                      type="button"
-                      class="viewer-shell__library-item"
-                      [class.viewer-shell__library-item--selected]="item.id === library.selectedId()"
-                      [attr.aria-pressed]="item.id === library.selectedId()"
-                      (click)="selectLibraryItem(item.id)"
-                    >
-                      <div class="viewer-shell__library-thumb">
-                        @if (item.thumbnailUrl === undefined) {
-                          <div class="viewer-shell__library-thumb-skeleton" aria-hidden="true"></div>
-                        } @else if (item.thumbnailUrl) {
-                          <img [src]="item.thumbnailUrl" [alt]="item.displayName" />
-                        } @else {
-                          <div class="viewer-shell__library-thumb-placeholder" aria-hidden="true">
-                            <span>PDF</span>
-                          </div>
-                        }
-                      </div>
-                      <div class="viewer-shell__library-meta">
-                        <span class="viewer-shell__library-name" [attr.title]="item.name">
-                          {{ item.displayName }}
-                        </span>
-                        @if (item.pageCount) {
-                          <span class="viewer-shell__library-pages">{{ item.pageCount }}ページ</span>
-                        } @else {
-                          <span class="viewer-shell__library-pages">ページ数取得中</span>
-                        }
-                      </div>
-                    </button>
+                    <div class="viewer-shell__library-row">
+                      <button
+                        type="button"
+                        class="viewer-shell__library-item"
+                        [class.viewer-shell__library-item--selected]="item.id === library.selectedId()"
+                        [attr.aria-pressed]="item.id === library.selectedId()"
+                        (click)="selectLibraryItem(item.id)"
+                      >
+                        <div class="viewer-shell__library-thumb">
+                          @if (item.thumbnailUrl === undefined) {
+                            <div class="viewer-shell__library-thumb-skeleton" aria-hidden="true"></div>
+                          } @else if (item.thumbnailUrl) {
+                            <img [src]="item.thumbnailUrl" [alt]="item.displayName" />
+                          } @else {
+                            <div class="viewer-shell__library-thumb-placeholder" aria-hidden="true">
+                              <span>PDF</span>
+                            </div>
+                          }
+                        </div>
+                        <div class="viewer-shell__library-meta">
+                          <span class="viewer-shell__library-name" [attr.title]="item.name">
+                            {{ item.displayName }}
+                          </span>
+                          @if (item.pageCount) {
+                            <span class="viewer-shell__library-pages">{{ item.pageCount }}ページ</span>
+                          } @else {
+                            <span class="viewer-shell__library-pages">ページ数取得中</span>
+                          }
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger viewer-shell__button--compact"
+                        (click)="deleteLibraryItem(item.id)"
+                        aria-label="削除"
+                        title="削除"
+                      >
+                        削除
+                      </button>
+                    </div>
                   }
                 </div>
               }

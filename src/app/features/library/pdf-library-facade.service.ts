@@ -21,6 +21,7 @@ export class PdfLibraryFacadeService {
   private selectionResetHandler: (() => void) | null = null;
   private readonly thumbnailInFlight = new Set<string>();
   private selecting = false;
+  private selectingPromise: Promise<void> | null = null;
   private pendingSelection: string | null = null;
 
   readonly items = this.itemsSignal.asReadonly();
@@ -94,18 +95,23 @@ export class PdfLibraryFacadeService {
     }
     this.pendingSelection = id;
     if (this.selecting) {
-      return;
+      return this.selectingPromise ?? Promise.resolve();
     }
     this.selecting = true;
-    try {
-      while (this.pendingSelection) {
-        const nextId = this.pendingSelection;
-        this.pendingSelection = null;
-        await this.performSelect(nextId);
+    const run = (async () => {
+      try {
+        while (this.pendingSelection) {
+          const nextId = this.pendingSelection;
+          this.pendingSelection = null;
+          await this.performSelect(nextId);
+        }
+      } finally {
+        this.selecting = false;
+        this.selectingPromise = null;
       }
-    } finally {
-      this.selecting = false;
-    }
+    })();
+    this.selectingPromise = run;
+    await run;
   }
 
   async selectNext(): Promise<void> {
@@ -159,6 +165,67 @@ export class PdfLibraryFacadeService {
     }
   }
 
+  async remove(id: string): Promise<void> {
+    await this.removeMany([id]);
+  }
+
+  async removeMany(ids: string[]): Promise<void> {
+    const unique = Array.from(new Set(ids.filter((id) => id)));
+    if (!unique.length) {
+      return;
+    }
+
+    await (this.selectingPromise ?? Promise.resolve());
+
+    const removeSet = new Set(unique);
+    const currentItems = this.itemsSignal();
+    if (!currentItems.length) {
+      return;
+    }
+
+    const selectedId = this.selectedIdSignal();
+    const selectedIndex = selectedId
+      ? currentItems.findIndex((item) => item.id === selectedId)
+      : -1;
+    const remaining = currentItems.filter((item) => !removeSet.has(item.id));
+    if (remaining.length === currentItems.length) {
+      return;
+    }
+
+    this.itemsSignal.set(remaining);
+    unique.forEach((id) => {
+      this.thumbnailInFlight.delete(id);
+      if (this.pendingSelection === id) {
+        this.pendingSelection = null;
+      }
+    });
+
+    if (!selectedId || !removeSet.has(selectedId)) {
+      return;
+    }
+
+    if (!remaining.length) {
+      await this.clearSelection();
+      return;
+    }
+
+    const fallbackIndex = selectedIndex >= 0 ? Math.min(selectedIndex, remaining.length - 1) : 0;
+    const nextId = remaining[fallbackIndex]?.id ?? null;
+    if (!nextId) {
+      await this.clearSelection();
+      return;
+    }
+    await this.select(nextId);
+  }
+
+  async clear(): Promise<void> {
+    await (this.selectingPromise ?? Promise.resolve());
+    this.pendingSelection = null;
+    this.thumbnailInFlight.clear();
+    this.itemsSignal.set([]);
+    await this.clearSelection();
+  }
+
   private async performSelect(id: string): Promise<void> {
     const target = this.findItem(id);
     if (!target) {
@@ -208,6 +275,18 @@ export class PdfLibraryFacadeService {
     this.itemsSignal.update((items) =>
       items.map((item) => (item.id === id ? { ...item, ...partial } : item))
     );
+  }
+
+  private async clearSelection(): Promise<void> {
+    const currentId = this.selectedIdSignal();
+    if (currentId) {
+      const snapshot = this.annotations.snapshotUserAnnotations();
+      this.updateItem(currentId, { annotations: snapshot });
+    }
+    this.selectedIdSignal.set(null);
+    this.selectionResetHandler?.();
+    this.annotations.reset();
+    await this.pdf.reset();
   }
 
   private buildDisplayName(name: string, items: PdfLibraryItem[]): string {

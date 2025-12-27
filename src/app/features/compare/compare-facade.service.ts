@@ -201,12 +201,25 @@ export class CompareFacadeService {
     return texts;
   }
 
+  private normalizeTextForCompare(text: string): string {
+    const normalized = typeof text.normalize === 'function' ? text.normalize('NFKC') : text;
+    return normalized
+      .replace(/[\u00ad\u200b\u200c\u200d\u2060\ufeff]/g, '')
+      .replace(/\s+/g, '');
+  }
+
   private diff(base: string[], target: string[]): CompareSummary {
     const maxPages = Math.max(base.length, target.length);
     const changedPages: number[] = [];
     for (let i = 0; i < maxPages; i += 1) {
-      const baseText = base[i] ?? '';
-      const targetText = target[i] ?? '';
+      const baseExists = i < base.length;
+      const targetExists = i < target.length;
+      if (!baseExists || !targetExists) {
+        changedPages.push(i + 1);
+        continue;
+      }
+      const baseText = this.normalizeTextForCompare(base[i] ?? '');
+      const targetText = this.normalizeTextForCompare(target[i] ?? '');
       if (baseText !== targetText) {
         changedPages.push(i + 1);
       }
@@ -216,7 +229,7 @@ export class CompareFacadeService {
     const note =
       changedPages.length === 0 && addedPages === 0 && removedPages === 0
         ? '差分はありません'
-        : 'テキスト比較結果です（レイアウト差分は未検知）';
+        : 'テキスト比較結果です（空白差分は無視／レイアウト差分は未検知）';
     return { addedPages, removedPages, changedPages, note };
   }
 

@@ -634,9 +634,7 @@
 }
 
 .viewer-shell__page-overlay--changed {
-  @apply rounded-[10px] border border-solid;
-  border-color: mixins.color('amber-400-a70');
-  box-shadow: 0 0 0 1px mixins.color('amber-400-a25'), 0 10px 25px mixins.color('black-a35');
+  @apply rounded-[10px];
 }
 
 .viewer-shell__page-overlay--changed .viewer-shell__page-label {
@@ -718,6 +716,10 @@
 
 .viewer-shell__panel-header {
   @apply mb-2 flex items-center justify-between gap-2;
+}
+
+.viewer-shell__panel-actions {
+  @apply flex items-center justify-end gap-2;
 }
 
 .viewer-shell__panel-title {
@@ -898,8 +900,12 @@
   @apply flex flex-col gap-2;
 }
 
+.viewer-shell__library-row {
+  @apply flex items-center gap-2;
+}
+
 .viewer-shell__library-item {
-  @apply grid items-center gap-3 rounded-xl border border-solid p-2 text-left cursor-pointer;
+  @apply flex-1 min-w-0 grid items-center gap-3 rounded-xl border border-solid p-2 text-left cursor-pointer;
   grid-template-columns: 56px minmax(0, 1fr);
   border-color: mixins.color('border-subtle');
   background-color: mixins.color('surface-2');
