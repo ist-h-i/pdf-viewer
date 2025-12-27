@@ -3,7 +3,7 @@
 対象: `pdf-viewer`（FR-07 コメント）  
 主な実装: `src/app/pages/viewer-shell/viewer-shell.component.*`, `src/app/features/annotations/annotation-facade.service.ts`, `src/app/core/models.ts`
 
-関連: [comment-uiux-redesign.md](comment-uiux-redesign.md)
+関連: [comment-uiux-redesign.md](../external/uiux/comment-uiux-redesign.md)
 
 ## 1. 概要（何を提供するか）
 本アプリの「コメント」は、PDF ページ上の任意位置に **アンカー（点）** と **吹き出し（バブル）** を配置し、吹き出し内に **スレッド（時系列のメッセージ列）** を残す注釈機能です。

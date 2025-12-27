@@ -16,7 +16,7 @@ PDF 上でテキスト選択 → 右クリック → 「選択範囲をハイラ
 
 ## 4. 調査結果（旧仕様）
 ### 4.1 ハイライトが 2 系統に分かれていた
-`docs/highlight-design.md` に記載の通り、旧実装ではハイライトが 2 系統に分かれていた。
+`docs/design/highlight-design.md` に記載の通り、旧実装ではハイライトが 2 系統に分かれていた。
 - **選択範囲ハイライト（ユーザー操作）**: `.textLayer` の DOM を `span.text-highlight` でラップし、`ViewerShellComponent` 内の `textHighlights` に（page/start/end/color）を保持する方式。
 - **検索結果ハイライト（自動）**: `Marker`（rects）を `AnnotationFacadeService` に保持し、`div.highlight` の矩形オーバーレイで描画する方式。
 

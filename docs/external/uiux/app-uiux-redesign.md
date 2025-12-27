@@ -4,9 +4,9 @@
 対象: `pdf-viewer` 全体（`src/app/pages/viewer-shell/*` を中心に、ダイアログ/パネル/メニュー含む）
 
 関連ドキュメント:
-- 複数PDFライブラリ（`docs/multi-pdf-library-design.md`）
-- ページジャンプ（`docs/page-jump-design.md`）
-- コメントUI/UX（`docs/comment-uiux-redesign.md`）
+- 複数PDFライブラリ（`docs/design/multi-pdf-library-design.md`）
+- ページジャンプ（`docs/design/page-jump-design.md`）
+- コメントUI/UX（`docs/external/uiux/comment-uiux-redesign.md`）
 
 ---
 
@@ -77,7 +77,7 @@ UIルール:
 
 ### 3.2 Left Dock（左）
 タブで切替（最初は2つで十分）:
-- **Library**: 複数PDFのカード/リスト（`docs/multi-pdf-library-design.md` と統合）
+- **Library**: 複数PDFのカード/リスト（`docs/design/multi-pdf-library-design.md` と統合）
 - **Thumbnails**: 現在PDFのサムネ（ページ移動の最短動線）
 
 設計ポイント:
@@ -87,7 +87,7 @@ UIルール:
 ### 3.3 Right Dock（右）
 タブで切替:
 - **Inspector**: 選択中のハイライト/コメントの詳細と編集（タイトル、色、削除、返信など）
-- **Lists**: コメント一覧 / ハイライト一覧（ページセクション化などは `docs/comment-uiux-redesign.md` を踏襲）
+- **Lists**: コメント一覧 / ハイライト一覧（ページセクション化などは `docs/external/uiux/comment-uiux-redesign.md` を踏襲）
 - **Compare**: 比較結果の要約・差分一覧（ページ単位のジャンプ）
 
 設計ポイント:
@@ -274,7 +274,7 @@ UIルール:
 ### 13.2 入力（検索/数値/セレクト）
 - 高さは原則 `36px`（密度が必要なら `32px` の compact を用意）
 - Prefix/Suffix（任意）: アイコンや `1 / 120` のような補助表示を“内側”に持つ（レイアウト崩れ防止）
-- 数値入力: 直接編集できるが、確定値はクランプ（`docs/page-jump-design.md` の方針）
+- 数値入力: 直接編集できるが、確定値はクランプ（`docs/design/page-jump-design.md` の方針）
 
 ### 13.3 Dockタブ
 - 左寄せ縦タブ（推奨） or Dock上部横タブ（現実装に合わせて選択）
@@ -283,7 +283,7 @@ UIルール:
 ### 13.4 リスト（高密度）
 - 1行は「タイトル中心 + 右端に最小アクション」
 - 長文は出さない（全文は Inspector か hover/tooltip）
-- ページ単位セクション化（コメント/ハイライト/比較結果）: `docs/comment-uiux-redesign.md` の思想を全一覧に拡張
+- ページ単位セクション化（コメント/ハイライト/比較結果）: `docs/external/uiux/comment-uiux-redesign.md` の思想を全一覧に拡張
 
 ### 13.5 トースト / ダイアログ / ポップオーバー
 - Toast: 右上（Command Barの直下）/ 220ms で出入り、重要度で色を変える
@@ -311,7 +311,7 @@ Command Bar:
 ### 14.3 複数PDFライブラリ（Library）
 配置: Left Dock（常時 or すぐ開ける）
 - 表示: サムネ（任意/遅延） + `displayName` + ページ数 + 追加時刻（詳細は非表示でも可）
-- 選択: クリックで切替（切替時はビュー状態リセット、注釈はドキュメントに紐づけて保持: `docs/multi-pdf-library-design.md`）
+- 選択: クリックで切替（切替時はビュー状態リセット、注釈はドキュメントに紐づけて保持: `docs/design/multi-pdf-library-design.md`）
 - アクション（右端メニュー）:
   - 開く / ダウンロード / ライブラリから削除
   - 同名対策: `name (2)` のように `displayName` を生成
@@ -319,7 +319,7 @@ Command Bar:
 ### 14.4 ページ移動（Page Navigator）
 配置: Command Bar 右側（常時表示）
 - 表示: `current / total`（例: `12 / 120`）
-- 入力: `Enter` でジャンプ、空/非数は復帰、範囲外はクランプ（詳細は `docs/page-jump-design.md`）
+- 入力: `Enter` でジャンプ、空/非数は復帰、範囲外はクランプ（詳細は `docs/design/page-jump-design.md`）
 - スライダー: `input` で表示のみ、`change` でジャンプ（重さ回避）
 - 追加（任意）: `p` キーで入力にフォーカス（作業速度が上がる）
 
@@ -341,7 +341,7 @@ Command Bar:
   - 削除（Destructive）
 
 ### 14.7 コメント（Comment）
-基本は `docs/comment-uiux-redesign.md` を踏襲し、全体レイアウトに統合する。
+基本は `docs/external/uiux/comment-uiux-redesign.md` を踏襲し、全体レイアウトに統合する。
 - PDF上: 吹き出し内で返信完結（選択時のみ入力UI）
 - 一覧: Right Dock（Lists）でページ単位セクション、高密度（削除 + タイトル）
 - 詳細: Right Dock（Inspector）でスレッド全文/編集

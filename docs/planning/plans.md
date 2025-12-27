@@ -1,6 +1,6 @@
 # コーディング計画（pdf-viewer）
 
-参照: `docs/requirement.md` / `docs/function-list.md`
+参照: `docs/external/requirement.md` / `docs/external/function-list.md`
 
 ## 1. 機能対応状況（設計書とのギャップ）
 

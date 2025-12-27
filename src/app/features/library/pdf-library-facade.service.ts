@@ -263,6 +263,10 @@ export class PdfLibraryFacadeService {
       canvas.height = Math.floor(scaledViewport.height * outputScale);
       canvas.style.width = `${scaledViewport.width}px`;
       canvas.style.height = `${scaledViewport.height}px`;
+      context.save();
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.restore();
       const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
       await page.render({ canvasContext: context, viewport: scaledViewport, transform }).promise;
       return { url: canvas.toDataURL('image/png'), pageCount: doc.numPages };

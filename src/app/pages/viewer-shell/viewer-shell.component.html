@@ -1,171 +1,371 @@
-<div class="viewer-shell">
-  <header class="viewer-shell__top-bar">
-    <div class="viewer-shell__top-panel">
-      <div class="viewer-shell__top-section viewer-shell__top-section--picker">
-        <label class="viewer-shell__file-picker">
+<div
+  class="viewer-shell"
+  [style.--left-dock-width.px]="leftDockWidth()"
+  [style.--right-dock-width.px]="rightDockWidth()"
+  [style.--dock-collapsed-width.px]="dockCollapsedWidth"
+>
+  <header class="viewer-shell__command-bar">
+    <div class="viewer-shell__command-row viewer-shell__command-row--primary">
+      <div class="viewer-shell__command-section viewer-shell__command-section--left">
+        <label class="viewer-shell__button viewer-shell__button--primary viewer-shell__file-picker">
           <input
+            #importInput
             class="viewer-shell__file-picker-input"
             type="file"
             accept="application/pdf"
             multiple
             (change)="onFileChange($event)"
           />
-          <span>ファイルを選択</span>
+          <span>PDFを追加</span>
         </label>
-      </div>
-      <div class="viewer-shell__top-section viewer-shell__top-section--controls">
-        <div class="viewer-shell__toolbar">
-          <div class="viewer-shell__toolbar-group">
-            <button
-              type="button"
-              class="viewer-shell__button viewer-shell__button--ghost"
-              (click)="zoomOut()"
-              [disabled]="!hasPdf()"
-            >
-              -
-            </button>
-            <span class="viewer-shell__zoom-indicator">{{ zoomPercent() }}%</span>
-            <button
-              type="button"
-              class="viewer-shell__button viewer-shell__button--ghost"
-              (click)="zoomIn()"
-              [disabled]="!hasPdf()"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              class="viewer-shell__button viewer-shell__button--ghost"
-              (click)="resetZoom()"
-              [disabled]="!hasPdf()"
-            >
-              等倍
-            </button>
-          </div>
-          <div class="viewer-shell__toolbar-group viewer-shell__toolbar-group--page-jump">
-            <div class="viewer-shell__page-jump">
-              <input
-                class="viewer-shell__page-input"
-                type="text"
-                inputmode="numeric"
-                pattern="[0-9]*"
-                [disabled]="!hasPdf()"
-                [ngModel]="pageInputValue()"
-                (ngModelChange)="onPageInputChange($event)"
-                (keydown.enter)="$event.preventDefault(); commitPageInput()"
-                (blur)="commitPageInput()"
-                aria-label="ペ�Eジ番号"
-              />
-              <span class="viewer-shell__page-total">/ {{ pageCountLabel() }}</span>
-              <button
-                type="button"
-                class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--compact"
-                (click)="commitPageInput()"
-                [disabled]="!hasPdf()"
-              >
-                移動
-              </button>
+        <button type="button" class="viewer-shell__button viewer-shell__button--ghost" (click)="openLibraryDock()">
+          ライブラリ
+        </button>
+        <div class="viewer-shell__command-group viewer-shell__command-group--tight">
+          <button
+            type="button"
+            class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--compact"
+            (click)="selectPrevPdf()"
+            [disabled]="!library.hasPrev()"
+            title="前のPDF (Ctrl/Cmd + [)"
+          >
+            前へ
+          </button>
+          <button
+            type="button"
+            class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--compact"
+            (click)="selectNextPdf()"
+            [disabled]="!library.hasNext()"
+            title="次のPDF (Ctrl/Cmd + ])"
+          >
+            次へ
+          </button>
+        </div>
+        @if (flags.search) {
+          <button
+            type="button"
+            class="viewer-shell__button viewer-shell__button--ghost viewer-shell__command-search"
+            (click)="openSearchPanel()"
+            [disabled]="!hasPdf()"
+          >
+            検索
+          </button>
+        }
+        <div class="viewer-shell__tools-menu" #toolsMenu>
+          <button
+            type="button"
+            class="viewer-shell__button viewer-shell__button--ghost"
+            (click)="toggleToolsMenu()"
+            [attr.aria-expanded]="toolsMenuOpen()"
+            aria-haspopup="menu"
+          >
+            …ツール
+          </button>
+          @if (toolsMenuOpen()) {
+            <div class="viewer-shell__tools-menu-popover" role="menu">
+              @if (flags.search) {
+                <button
+                  type="button"
+                  class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--menu viewer-shell__tools-menu-item viewer-shell__tools-menu-item--responsive"
+                  (click)="openSearchPanel(); closeToolsMenu()"
+                  [disabled]="!hasPdf()"
+                >
+                  検索
+                </button>
+              }
+              @if (flags.ocr) {
+                <button
+                  type="button"
+                  class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--menu viewer-shell__tools-menu-item"
+                  (click)="openOcrPanel(); closeToolsMenu()"
+                  [disabled]="!hasPdf()"
+                >
+                  OCR
+                </button>
+              }
+              @if (flags.compare) {
+                <button
+                  type="button"
+                  class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--menu viewer-shell__tools-menu-item"
+                  (click)="openComparePanel(); closeToolsMenu()"
+                  [disabled]="!hasPdf()"
+                >
+                  比較
+                </button>
+              }
             </div>
-            <input
-              class="viewer-shell__page-slider"
-              type="range"
-              min="1"
-              [max]="pdf.pageCount() || 1"
-              [value]="pageSliderValue()"
-              [disabled]="!hasPdf()"
-              (input)="onPageSliderInput($event)"
-              (change)="onPageSliderChange($event)"
-              aria-label="ペ�Eジスライダ�E"
-            />
-          </div>
-          <div class="viewer-shell__toolbar-group viewer-shell__toolbar-group--library">
-            <button
-              type="button"
-              class="viewer-shell__button viewer-shell__button--ghost"
-              (click)="selectPrevPdf()"
-              [disabled]="!library.hasPrev()"
-            >
-              前のPDF
-            </button>
-            <button
-              type="button"
-              class="viewer-shell__button"
-              (click)="openLibraryDialog()"
-              [disabled]="!library.items().length"
-            >
-              一覧
-            </button>
-            <button
-              type="button"
-              class="viewer-shell__button viewer-shell__button--ghost"
-              (click)="selectNextPdf()"
-              [disabled]="!library.hasNext()"
-            >
-              次のPDF
-            </button>
-          </div>
-          <div class="viewer-shell__toolbar-group">
-            <button
-              type="button"
-              class="viewer-shell__button viewer-shell__button--ghost"
-              [class.viewer-shell__button--active]="showObjects()"
-              (click)="toggleObjects()"
-              [disabled]="!hasPdf() || (!flags.markers && !flags.comments)"
-            >
-              オブジェクト {{ showObjects() ? 'ON' : 'OFF' }}
-            </button>
-            <button
-              type="button"
-              class="viewer-shell__button"
-              (click)="downloadPdf()"
-              [disabled]="!hasPdf() || isDownloading()"
-            >
-              PDF ダウンロード
-            </button>
-          </div>
+          }
         </div>
       </div>
-      <div class="viewer-shell__top-section viewer-shell__top-section--status">
-        <div class="viewer-shell__status">
-          <div class="viewer-shell__status-document">
-            <span class="viewer-shell__status-label">現在のドキュメント</span>
-            @if (library.selectedItem(); as selected) {
-              <span class="viewer-shell__status-name" [attr.title]="selected.name">
-                {{ selected.displayName }}
+
+      <div class="viewer-shell__command-section viewer-shell__command-section--center">
+        <div class="viewer-shell__doc-title">
+          @if (library.selectedItem(); as selected) {
+            <span class="viewer-shell__doc-name" [attr.title]="selected.name">{{ selected.displayName }}</span>
+          } @else if (pdf.pdfName()) {
+            <span class="viewer-shell__doc-name" [attr.title]="pdf.pdfName()">{{ pdf.pdfName() }}</span>
+          } @else {
+            <span class="viewer-shell__doc-name viewer-shell__doc-name--empty">ファイル未選択</span>
+          }
+        </div>
+      </div>
+
+      <div class="viewer-shell__command-section viewer-shell__command-section--status">
+        <div class="viewer-shell__status-slot" role="status" aria-live="polite">
+          <div class="viewer-shell__status-group">
+            @for (item of visibleStatusItems(); track $index) {
+              <span
+                class="viewer-shell__status-pill"
+                [class.viewer-shell__status-pill--error]="item.variant === 'error'"
+                [class.viewer-shell__status-pill--loading]="item.variant === 'loading'"
+                [class.viewer-shell__status-pill--info]="item.variant === 'info'"
+                [attr.title]="item.title ?? item.label"
+              >
+                {{ item.label }}
               </span>
-            } @else if (pdf.pdfName()) {
-              <span class="viewer-shell__status-name">{{ pdf.pdfName() }}</span>
-            } @else {
-              <span class="viewer-shell__status-name">ファイル未選択</span>
             }
-          </div>
-          <div class="viewer-shell__status-meta">
-            @if (pdf.pageCount() > 0) {
-              <span class="viewer-shell__status-pill">{{ pdf.pageCount() }} ページ</span>
-            }
-            @if (pdf.isLoading()) {
-              <span class="viewer-shell__status-pill viewer-shell__status-pill--loading">読み込み中...</span>
-            }
-            @if (isDownloading()) {
-              <span class="viewer-shell__status-pill viewer-shell__status-pill--loading">
-                ダウンロード中...
+            @if (statusOverflowCount() > 0) {
+              <span class="viewer-shell__status-pill viewer-shell__status-pill--muted">
+                +{{ statusOverflowCount() }}
               </span>
-            }
-            @if (pdf.lastError()) {
-              <span class="viewer-shell__status-pill viewer-shell__status-pill--error">{{ pdf.lastError() }}</span>
             }
           </div>
         </div>
       </div>
+
+      <div class="viewer-shell__command-section viewer-shell__command-section--right">
+        <div class="viewer-shell__command-group viewer-shell__command-group--tight">
+          <button
+            type="button"
+            class="viewer-shell__button viewer-shell__button--ghost"
+            (click)="zoomOut()"
+            [disabled]="!hasPdf()"
+          >
+            -
+          </button>
+          <span class="viewer-shell__zoom-indicator">{{ zoomPercent() }}%</span>
+          <button
+            type="button"
+            class="viewer-shell__button viewer-shell__button--ghost"
+            (click)="zoomIn()"
+            [disabled]="!hasPdf()"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            class="viewer-shell__button viewer-shell__button--ghost viewer-shell__zoom-reset"
+            (click)="resetZoom()"
+            [disabled]="!hasPdf()"
+          >
+            等倍
+          </button>
+        </div>
+
+        <div class="viewer-shell__command-group">
+          <button
+            type="button"
+            class="viewer-shell__button viewer-shell__button--ghost"
+            [class.viewer-shell__button--active]="showObjects()"
+            (click)="toggleObjects()"
+            [disabled]="!hasPdf() || (!flags.markers && !flags.comments)"
+          >
+            Objects {{ showObjects() ? 'ON' : 'OFF' }}
+          </button>
+          <button
+            type="button"
+            class="viewer-shell__button"
+            (click)="downloadPdf()"
+            [disabled]="!hasPdf() || isDownloading()"
+          >
+            ダウンロード
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="viewer-shell__command-row viewer-shell__command-row--nav">
+      <div class="viewer-shell__command-section viewer-shell__command-section--nav-left">
+        <div class="viewer-shell__page-jump">
+          <span class="viewer-shell__page-prefix">p</span>
+          <input
+            #pageInputField
+            class="viewer-shell__page-input"
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            [disabled]="!hasPdf()"
+            [ngModel]="pageInputValue()"
+            (ngModelChange)="onPageInputChange($event)"
+            (keydown.enter)="$event.preventDefault(); commitPageInput()"
+            (blur)="commitPageInput()"
+            aria-label="ページ番号"
+          />
+          <span class="viewer-shell__page-total">/ {{ pageCountLabel() }}</span>
+        </div>
+      </div>
+      <div class="viewer-shell__command-section viewer-shell__command-section--nav-center">
+        <input
+          class="viewer-shell__page-slider"
+          type="range"
+          min="1"
+          step="0.01"
+          [max]="pdf.pageCount() || 1"
+          [value]="pageSliderValue()"
+          [disabled]="!hasPdf()"
+          (pointerdown)="onPageSliderPointerDown()"
+          (pointerup)="onPageSliderPointerUp()"
+          (pointercancel)="onPageSliderPointerUp()"
+          (input)="onPageSliderInput($event)"
+          (change)="onPageSliderChange($event)"
+          aria-label="ページスライダー"
+        />
+      </div>
+      <div class="viewer-shell__command-section viewer-shell__command-section--nav-right"></div>
     </div>
   </header>
 
   <div class="viewer-shell__layout">
-    <section class="viewer-shell__viewer" #viewerSection (click)="closeContextMenu()">
-      <div class="viewer-shell__viewer-hint">
-        <p>右クリックのコンテキストメニューからコメント追加とテキストハイライトを行えます。</p>
-        <p>検索結果は自動でハイライト表示されます。</p>
+    <aside
+      class="viewer-shell__dock viewer-shell__dock--left"
+      [class.viewer-shell__dock--collapsed]="!leftDockOpen()"
+      [class.viewer-shell__dock--expanded]="leftDockOpen()"
+    >
+      <div class="viewer-shell__dock-header">
+        <div class="viewer-shell__dock-tabs" role="tablist" aria-label="左ドック">
+          <button
+            type="button"
+            class="viewer-shell__dock-tab"
+            [class.viewer-shell__dock-tab--active]="leftDockTab() === 'library'"
+            (click)="setLeftDockTab('library')"
+            [attr.aria-pressed]="leftDockTab() === 'library'"
+            aria-label="Library"
+          >
+            <span class="viewer-shell__dock-tab-label">Library</span>
+            <span class="viewer-shell__dock-tab-short" aria-hidden="true">L</span>
+          </button>
+          <button
+            type="button"
+            class="viewer-shell__dock-tab"
+            [class.viewer-shell__dock-tab--active]="leftDockTab() === 'thumbnails'"
+            (click)="setLeftDockTab('thumbnails')"
+            [attr.aria-pressed]="leftDockTab() === 'thumbnails'"
+            aria-label="Thumbnails"
+          >
+            <span class="viewer-shell__dock-tab-label">Thumbnails</span>
+            <span class="viewer-shell__dock-tab-short" aria-hidden="true">T</span>
+          </button>
+        </div>
+        <button
+          type="button"
+          class="viewer-shell__icon-button"
+          (click)="toggleLeftDock()"
+          [attr.aria-label]="leftDockOpen() ? '左ドックを閉じる' : '左ドックを開く'"
+        >
+          {{ leftDockOpen() ? '<<' : '>>' }}
+        </button>
       </div>
+      <div class="viewer-shell__dock-body">
+        @if (leftDockTab() === 'library') {
+          <section class="viewer-shell__panel">
+            <div class="viewer-shell__panel-header">
+              <h3 class="viewer-shell__panel-title">ライブラリ</h3>
+              <span class="viewer-shell__badge">{{ library.items().length }}件</span>
+            </div>
+            <div class="viewer-shell__panel-body">
+              @if (!library.items().length) {
+                <div class="viewer-shell__empty-state viewer-shell__empty-state--dock">
+                  PDFを追加して開始してください。
+                </div>
+              } @else {
+                <div class="viewer-shell__library-list">
+                  @for (item of library.items(); track item.id) {
+                    <button
+                      type="button"
+                      class="viewer-shell__library-item"
+                      [class.viewer-shell__library-item--selected]="item.id === library.selectedId()"
+                      [attr.aria-pressed]="item.id === library.selectedId()"
+                      (click)="selectLibraryItem(item.id)"
+                    >
+                      <div class="viewer-shell__library-thumb">
+                        @if (item.thumbnailUrl === undefined) {
+                          <div class="viewer-shell__library-thumb-skeleton" aria-hidden="true"></div>
+                        } @else if (item.thumbnailUrl) {
+                          <img [src]="item.thumbnailUrl" [alt]="item.displayName" />
+                        } @else {
+                          <div class="viewer-shell__library-thumb-placeholder" aria-hidden="true">
+                            <span>PDF</span>
+                          </div>
+                        }
+                      </div>
+                      <div class="viewer-shell__library-meta">
+                        <span class="viewer-shell__library-name" [attr.title]="item.name">
+                          {{ item.displayName }}
+                        </span>
+                        @if (item.pageCount) {
+                          <span class="viewer-shell__library-pages">{{ item.pageCount }}ページ</span>
+                        } @else {
+                          <span class="viewer-shell__library-pages">ページ数取得中</span>
+                        }
+                      </div>
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+          </section>
+        }
+        @if (leftDockTab() === 'thumbnails') {
+          <section class="viewer-shell__panel">
+            <div class="viewer-shell__panel-header">
+              <h3 class="viewer-shell__panel-title">ページサムネイル</h3>
+              <span class="viewer-shell__badge">{{ pageCountLabel() }}</span>
+            </div>
+            <div class="viewer-shell__panel-body">
+              @if (!hasPdf()) {
+                <div class="viewer-shell__empty-state viewer-shell__empty-state--dock">
+                  PDFを読み込むとサムネイルが表示されます。
+                </div>
+              } @else {
+                <div class="viewer-shell__thumbnail-list">
+                  @for (page of pageNumbers(); track page) {
+                    <button
+                      type="button"
+                      class="viewer-shell__thumbnail-item"
+                      [class.viewer-shell__thumbnail-item--selected]="currentPage() === page"
+                      (click)="jumpToPage(page)"
+                      [attr.aria-pressed]="currentPage() === page"
+                    >
+                      <div class="viewer-shell__thumbnail-frame">
+                        <canvas
+                          class="viewer-shell__thumbnail-canvas"
+                          #thumbnailCanvas
+                          [attr.data-page-number]="page"
+                        ></canvas>
+                      </div>
+                      <span class="viewer-shell__thumbnail-label">p{{ page }}</span>
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+          </section>
+        }
+      </div>
+      <div
+        class="viewer-shell__dock-resizer"
+        (pointerdown)="startDockResize('left', $event)"
+        aria-label="左ドックの幅を調整"
+      ></div>
+    </aside>
+
+    <section class="viewer-shell__viewer" #viewerSection (click)="closeContextMenu()">
+      @if (!hasPdf()) {
+        <div class="viewer-shell__viewer-hint">
+          <p>右クリックのコンテキストメニューからコメント追加とテキストハイライトを行えます。</p>
+          <p>検索結果は自動でハイライト表示されます。</p>
+        </div>
+      }
 
       @if (isDragOver()) {
         <div class="viewer-shell__drag-overlay" aria-hidden="true">
@@ -388,21 +588,18 @@
                                   </div>
                                 }
                                 @if (!isReadOnlyComment(comment)) {
-                                  <span
+                                  <div
                                     class="viewer-shell__bubble-handle viewer-shell__bubble-handle--width"
-                                    aria-hidden="true"
-                                    (pointerdown)="startCommentResize(comment, 'bubbleHeight', $event)"
-                                  ></span>
-                                  <span
-                                    class="viewer-shell__bubble-handle viewer-shell__bubble-handle--height"
-                                    aria-hidden="true"
                                     (pointerdown)="startCommentResize(comment, 'bubbleWidth', $event)"
-                                  ></span>
-                                  <span
+                                  ></div>
+                                  <div
+                                    class="viewer-shell__bubble-handle viewer-shell__bubble-handle--height"
+                                    (pointerdown)="startCommentResize(comment, 'bubbleHeight', $event)"
+                                  ></div>
+                                  <div
                                     class="viewer-shell__bubble-handle viewer-shell__bubble-handle--corner"
-                                    aria-hidden="true"
                                     (pointerdown)="startCommentResize(comment, 'bubbleBoth', $event)"
-                                  ></span>
+                                  ></div>
                                 }
                               </div>
                             </div>
@@ -410,8 +607,6 @@
                         }
                       }
                     }
-
-                    <div class="viewer-shell__page-label">Page {{ overlay.pageNumber }}</div>
                   </div>
                 }
               </div>
@@ -525,350 +720,491 @@
       }
     </section>
 
-    <aside class="viewer-shell__side-panel">
-      @if (flags.search) {
-        <section class="viewer-shell__panel">
-          <div class="viewer-shell__panel-header">
-            <h3 class="viewer-shell__panel-title">全文検索</h3>
+    <aside
+      class="viewer-shell__dock viewer-shell__dock--right"
+      [class.viewer-shell__dock--collapsed]="!rightDockOpen()"
+      [class.viewer-shell__dock--expanded]="rightDockOpen()"
+    >
+      <div class="viewer-shell__dock-header">
+        <div class="viewer-shell__dock-tabs" role="tablist" aria-label="右ドック">
+          <button
+            type="button"
+            class="viewer-shell__dock-tab"
+            [class.viewer-shell__dock-tab--active]="rightDockTab() === 'inspector'"
+            (click)="setRightDockTab('inspector')"
+            [attr.aria-pressed]="rightDockTab() === 'inspector'"
+            aria-label="Inspector"
+          >
+            <span class="viewer-shell__dock-tab-label">Inspector</span>
+            <span class="viewer-shell__dock-tab-short" aria-hidden="true">I</span>
+          </button>
+          <button
+            type="button"
+            class="viewer-shell__dock-tab"
+            [class.viewer-shell__dock-tab--active]="rightDockTab() === 'lists'"
+            (click)="setRightDockTab('lists')"
+            [attr.aria-pressed]="rightDockTab() === 'lists'"
+            aria-label="Lists"
+          >
+            <span class="viewer-shell__dock-tab-label">Lists</span>
+            <span class="viewer-shell__dock-tab-short" aria-hidden="true">L</span>
+          </button>
+          @if (flags.compare) {
             <button
               type="button"
-              class="viewer-shell__button viewer-shell__button--ghost"
-              (click)="clearSearch()"
+              class="viewer-shell__dock-tab"
+              [class.viewer-shell__dock-tab--active]="rightDockTab() === 'compare'"
+              (click)="setRightDockTab('compare')"
+              [attr.aria-pressed]="rightDockTab() === 'compare'"
+              aria-label="Compare"
             >
-              クリア
+              <span class="viewer-shell__dock-tab-label">Compare</span>
+              <span class="viewer-shell__dock-tab-short" aria-hidden="true">C</span>
             </button>
-          </div>
-          <div class="viewer-shell__panel-body">
-            <div class="viewer-shell__form-row">
-              <input
-                class="viewer-shell__input viewer-shell__input--grow"
-                type="search"
-                placeholder="キーワード"
-                [ngModel]="searchQuery()"
-                (ngModelChange)="searchQuery.set($event)"
-              />
-              <button
-                type="button"
-                class="viewer-shell__button"
-                (click)="performSearch()"
-                [disabled]="search.isSearching()"
-              >
-                検索
-              </button>
+          }
+        </div>
+        <button
+          type="button"
+          class="viewer-shell__icon-button"
+          (click)="toggleRightDock()"
+          [attr.aria-label]="rightDockOpen() ? '右ドックを閉じる' : '右ドックを開く'"
+        >
+          {{ rightDockOpen() ? '>>' : '<<' }}
+        </button>
+      </div>
+      <div class="viewer-shell__dock-body">
+        @if (rightDockTab() === 'inspector') {
+          <section class="viewer-shell__panel viewer-shell__panel--inspector">
+            <div class="viewer-shell__panel-header">
+              <h3 class="viewer-shell__panel-title">Inspector</h3>
             </div>
-            @if (search.isSearching()) {
-              <div class="viewer-shell__helper-text">検索中...</div>
-            }
-            @if (search.searchResults().length) {
-              <ul class="viewer-shell__search-results">
-                @for (hit of search.searchResults(); track hit.id) {
-                  <li>
-                    <a
-                      class="viewer-shell__link"
-                      [href]="'#' + pageAnchorId(hit.page)"
-                      (click)="focusSearchHit(hit, $event)"
-                    >
-                      p{{ hit.page }}: {{ hit.context }}
-                    </a>
-                  </li>
-                }
-              </ul>
-            }
-          </div>
-        </section>
-      }
-
-      @if (flags.markers) {
-        <section class="viewer-shell__panel">
-          <div class="viewer-shell__panel-header">
-            <h3 class="viewer-shell__panel-title">ハイライト</h3>
-            <span class="viewer-shell__badge">{{ highlightCount() }}</span>
-          </div>
-          <div class="viewer-shell__panel-body">
-            <div class="viewer-shell__helper-text">
-              ページ上で右クリックし「選択範囲をハイライト」を選択してください。
-            </div>
-            <div class="viewer-shell__highlight-list">
-              @for (section of highlightSections(); track trackHighlightSection($index, section)) {
-                <div class="viewer-shell__highlight-section">
-                  <div class="viewer-shell__highlight-section-header">
-                    <span class="viewer-shell__highlight-section-label">p{{ section.page }}</span>
-                    <span class="viewer-shell__highlight-section-count">{{ section.highlights.length }}</span>
+            <div class="viewer-shell__panel-body">
+              @if (selectedMarker(); as marker) {
+                <div class="viewer-shell__inspector-block">
+                  <div class="viewer-shell__inspector-header">
+                    <span class="viewer-shell__inspector-type">Highlight</span>
+                    <span class="viewer-shell__inspector-meta">p{{ marker.page }}</span>
                   </div>
-                  <div class="viewer-shell__highlight-items">
-                    @for (highlight of section.highlights; track trackHighlightItem($index, highlight)) {
-                      <div
-                        class="viewer-shell__highlight-item"
-                        [class.viewer-shell__highlight-item--selected]="isSelectedMarker(highlight.id)"
-                        (click)="focusMarker(highlight, $event)"
-                        (keydown.enter)="focusMarker(highlight, $event)"
-                        tabindex="0"
-                      >
-                        <span
-                          class="viewer-shell__highlight-item-swatch"
-                          [style.--swatch-color]="highlight.color"
-                        ></span>
-                        <span
-                          class="viewer-shell__highlight-item-title"
-                          [attr.title]="highlightLabel(highlight)"
-                        >
-                          {{ highlightLabel(highlight) }}
-                        </span>
-                        @if (!isReadOnlyMarker(highlight)) {
-                          <button
-                            class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger viewer-shell__button--compact viewer-shell__highlight-item-delete"
-                            type="button"
-                            (click)="removeHighlight(highlight.id); $event.stopPropagation()"
-                          >
-                            削除
-                          </button>
-                        }
-                      </div>
-                    }
-                  </div>
-                </div>
-              }
-            </div>
-          </div>
-        </section>
-      }
-
-      @if (flags.comments) {
-        <section class="viewer-shell__panel">
-          <div class="viewer-shell__panel-header">
-            <h3 class="viewer-shell__panel-title">コメント一覧</h3>
-            <span class="viewer-shell__badge">{{ annotations.commentCount() }}</span>
-          </div>
-          <div class="viewer-shell__panel-body">
-            <div class="viewer-shell__helper-text">
-              ページ上で右クリックし「コメントを追加」を選択してください。
-            </div>
-            <div class="viewer-shell__comment-list">
-              @for (section of commentSections(); track trackCommentSection($index, section)) {
-                <div class="viewer-shell__comment-section">
-                  <div class="viewer-shell__comment-section-header">
-                    <span class="viewer-shell__comment-section-label">p{{ section.page }}</span>
-                    <span class="viewer-shell__comment-section-count">{{ section.comments.length }}</span>
-                  </div>
-                  <div class="viewer-shell__comment-items">
-                    @for (comment of section.comments; track trackComment($index, comment)) {
-                      <div
-                        class="viewer-shell__comment-item"
-                        [class.viewer-shell__comment-item--selected]="isSelectedComment(comment.id)"
-                        (click)="focusComment(comment, $event)"
-                        (keydown.enter)="focusComment(comment, $event)"
-                        tabindex="0"
-                      >
-                        @if (!isReadOnlyComment(comment)) {
-                          <button
-                            class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger viewer-shell__button--compact viewer-shell__comment-item-delete"
-                            type="button"
-                            (click)="removeComment(comment.id); $event.stopPropagation()"
-                          >
-                            削除
-                          </button>
-                        }
-                        <span class="viewer-shell__comment-item-title" [attr.title]="commentTitle(comment)">
-                          {{ commentTitle(comment) }}
-                        </span>
-                      </div>
-                    }
-                  </div>
-                </div>
-              }
-            </div>
-          </div>
-        </section>
-      }
-
-      @if (flags.ocr) {
-        <section class="viewer-shell__panel">
-          <div class="viewer-shell__panel-header">
-            <h3 class="viewer-shell__panel-title">OCR とテキスト抽出</h3>
-          </div>
-          <div class="viewer-shell__panel-body">
-            <div class="viewer-shell__form-row">
-              <label>対象</label>
-              <select
-                class="viewer-shell__select viewer-shell__select--grow"
-                [ngModel]="ocrScope()"
-                (ngModelChange)="ocrScope.set($event)"
-              >
-                <option value="page">ページ</option>
-                <option value="all">全ページ</option>
-              </select>
-              @if (ocrScope() === 'page') {
-                <label>ページ</label>
-                <input
-                  class="viewer-shell__input viewer-shell__input--grow"
-                  type="number"
-                  min="1"
-                  [max]="pdf.pageCount() || 1"
-                  [ngModel]="selectedOcrPage()"
-                  (ngModelChange)="selectedOcrPage.set($event)"
-                />
-              }
-              <button
-                type="button"
-                class="viewer-shell__button"
-                (click)="runOcr()"
-                [disabled]="ocr.isRunning()"
-              >
-                実行
-              </button>
-            </div>
-            @if (ocr.isRunning()) {
-              <div class="viewer-shell__helper-text">OCR 実行中...</div>
-            }
-            @if (ocr.result(); as result) {
-              <div class="viewer-shell__card">
-                <div class="viewer-shell__card-row">
-                  <span class="viewer-shell__tag">{{ ocrResultTag(result) }}</span>
-                  <span class="viewer-shell__helper-text">{{ result.durationMs }} ms</span>
-                </div>
-                <div class="viewer-shell__form-row">
-                  <button
-                    type="button"
-                    class="viewer-shell__button viewer-shell__button--ghost"
-                    (click)="copyOcrResult()"
-                  >
-                    クリップボードへコピー
-                  </button>
-                  <button
-                    type="button"
-                    class="viewer-shell__button viewer-shell__button--ghost"
-                    (click)="exportOcrResult()"
-                  >
-                    テキストで保存
-                  </button>
-                </div>
-                @if (ocrActionMessage()) {
-                  <div class="viewer-shell__helper-text">{{ ocrActionMessage() }}</div>
-                }
-                <pre>{{ result.text }}</pre>
-              </div>
-            }
-          </div>
-        </section>
-      }
-
-      @if (flags.compare) {
-        <section class="viewer-shell__panel">
-          <div class="viewer-shell__panel-header">
-            <h3 class="viewer-shell__panel-title">PDF ファイル比較</h3>
-            <button
-              type="button"
-              class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger"
-              (click)="clearCompareMode()"
-              [disabled]="compare.isRunning() || !compare.compareTargetSource()"
-            >
-              比較解除
-            </button>
-          </div>
-          <div class="viewer-shell__panel-body">
-            <label class="viewer-shell__file-picker">
-              <input
-                class="viewer-shell__file-picker-input"
-                type="file"
-                accept="application/pdf"
-                (change)="onCompareFileChange($event)"
-              />
-              <span>比較 PDF を選択</span>
-            </label>
-            @if (compare.compareTargetName()) {
-              <div class="viewer-shell__helper-text">対象: {{ compare.compareTargetName() }}</div>
-            }
-            @if (compare.isRunning()) {
-              <div class="viewer-shell__helper-text">比較中...</div>
-            }
-            @if (compare.result()) {
-              <div class="viewer-shell__card">
-                <p>{{ compare.result()?.note }}</p>
-                @if (compare.result()?.changedPages?.length) {
-                  <div class="viewer-shell__compare-pages">
-                    <span class="viewer-shell__helper-text">変更ページ</span>
-                    <div class="viewer-shell__page-chips">
-                      @for (page of compare.result()?.changedPages ?? []; track $index) {
+                  <label class="viewer-shell__field">
+                    <span class="viewer-shell__field-label">ラベル</span>
+                    <input
+                      type="text"
+                      class="viewer-shell__input"
+                      [ngModel]="marker.label"
+                      (ngModelChange)="updateMarker(marker.id, $event, marker.color)"
+                      [disabled]="!canEditMarker(marker)"
+                      placeholder="ハイライト"
+                    />
+                  </label>
+                  <div class="viewer-shell__field">
+                    <span class="viewer-shell__field-label">カラー</span>
+                    <div class="viewer-shell__swatch-row">
+                      @for (swatch of highlightSwatches; track swatch.id) {
                         <button
                           type="button"
-                          class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--small"
-                          (click)="jumpToComparePage(page)"
-                        >
-                          p{{ page }}
-                        </button>
+                          class="viewer-shell__highlight-swatch"
+                          [class.viewer-shell__highlight-swatch--selected]="swatch.color === marker.color"
+                          [style.--swatch-color]="swatch.color"
+                          (click)="updateMarker(marker.id, marker.label, swatch.color)"
+                          [disabled]="!canEditMarker(marker)"
+                          [attr.aria-label]="swatch.label"
+                        ></button>
                       }
                     </div>
                   </div>
-                } @else {
-                  <p class="viewer-shell__helper-text">変更ページ: なし</p>
-                }
-              </div>
-            }
-          </div>
-        </section>
-      }
-    </aside>
-  </div>
-
-  @if (isLibraryOpen()) {
-    <div class="viewer-shell__library-overlay" (click)="closeLibraryDialog()">
-      <div
-        class="viewer-shell__library-dialog"
-        role="dialog"
-        aria-modal="true"
-        (click)="$event.stopPropagation()"
-      >
-        <div class="viewer-shell__library-header">
-          <div class="viewer-shell__library-heading">
-            <h3 class="viewer-shell__library-title">PDF一覧</h3>
-            <span class="viewer-shell__library-count">{{ library.items().length }}件</span>
-          </div>
-          <button
-            type="button"
-            class="viewer-shell__button viewer-shell__button--ghost"
-            (click)="closeLibraryDialog()"
-          >
-            閉じる
-          </button>
-        </div>
-        <div class="viewer-shell__library-content">
-          @if (!library.items().length) {
-            <div class="viewer-shell__empty-state">まだPDFがありません。</div>
-          } @else {
-            <div class="viewer-shell__library-grid">
-              @for (item of library.items(); track item.id) {
-                <button
-                  type="button"
-                  class="viewer-shell__library-card"
-                  [class.viewer-shell__library-card--selected]="item.id === library.selectedId()"
-                  [attr.aria-pressed]="item.id === library.selectedId()"
-                  (click)="selectLibraryItem(item.id)"
-                >
-                  <div class="viewer-shell__library-thumb">
-                    @if (item.thumbnailUrl === undefined) {
-                      <div class="viewer-shell__library-thumb-skeleton" aria-hidden="true"></div>
-                    } @else if (item.thumbnailUrl) {
-                      <img [src]="item.thumbnailUrl" [alt]="item.displayName" />
+                  @if (marker.text) {
+                    <p class="viewer-shell__helper-text viewer-shell__inspector-preview">
+                      {{ marker.text }}
+                    </p>
+                  }
+                  <div class="viewer-shell__inspector-actions">
+                    <button
+                      type="button"
+                      class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger"
+                      (click)="removeMarker(marker.id)"
+                      [disabled]="!canEditMarker(marker)"
+                    >
+                      削除
+                    </button>
+                  </div>
+                </div>
+              } @else if (selectedComment(); as comment) {
+                <div class="viewer-shell__inspector-block">
+                  <div class="viewer-shell__inspector-header">
+                    <span class="viewer-shell__inspector-type">Comment</span>
+                    <span class="viewer-shell__inspector-meta">p{{ comment.page }}</span>
+                  </div>
+                  <div class="viewer-shell__field">
+                    <span class="viewer-shell__field-label">タイトル</span>
+                    @if (isEditingTitle(comment.id)) {
+                      <input
+                        type="text"
+                        class="viewer-shell__input"
+                        [ngModel]="titleDraft(comment.id)"
+                        (ngModelChange)="setTitleDraft(comment.id, $event)"
+                        (keyup.enter)="saveTitleEdit(comment.id)"
+                        (keydown.escape)="cancelTitleEdit(comment.id)"
+                        (blur)="saveTitleEdit(comment.id)"
+                        placeholder="コメントタイトル"
+                      />
                     } @else {
-                      <div class="viewer-shell__library-thumb-placeholder" aria-hidden="true">
-                        <span>PDF</span>
+                      <div class="viewer-shell__field-inline">
+                        <span class="viewer-shell__field-value">{{ commentTitle(comment) }}</span>
+                        @if (canEditComment(comment)) {
+                          <button
+                            type="button"
+                            class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--compact"
+                            (click)="startTitleEdit(comment, $event)"
+                          >
+                            編集
+                          </button>
+                        }
                       </div>
                     }
                   </div>
-                  <div class="viewer-shell__library-meta">
-                    <span class="viewer-shell__library-name" [attr.title]="item.name">
-                      {{ item.displayName }}
-                    </span>
-                    @if (item.pageCount) {
-                      <span class="viewer-shell__library-pages">{{ item.pageCount }}ページ</span>
-                    }
+                  <div class="viewer-shell__inspector-meta-row">
+                    <span>{{ comment.messages.length }}件</span>
+                    <span>{{ comment.createdAt | date: 'MM/dd HH:mm' }}</span>
                   </div>
-                </button>
+                  @if (latestMessage(comment); as latest) {
+                    <p class="viewer-shell__helper-text viewer-shell__inspector-preview">
+                      {{ latest.text }}
+                    </p>
+                  } @else {
+                    <p class="viewer-shell__helper-text">まだコメントはありません。</p>
+                  }
+                  <div class="viewer-shell__inspector-actions">
+                    <button
+                      type="button"
+                      class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger"
+                      (click)="removeComment(comment.id)"
+                      [disabled]="!canEditComment(comment)"
+                    >
+                      削除
+                    </button>
+                  </div>
+                </div>
+              } @else {
+                <div class="viewer-shell__empty-state viewer-shell__empty-state--panel">
+                  <p>テキスト選択 → 右クリックでハイライト。</p>
+                  <p>コメントは右クリックで追加できます。</p>
+                </div>
               }
             </div>
+          </section>
+        }
+
+        @if (rightDockTab() === 'lists') {
+          @if (flags.search) {
+            <section class="viewer-shell__panel">
+              <div class="viewer-shell__panel-header">
+                <h3 class="viewer-shell__panel-title">全文検索</h3>
+                <button
+                  type="button"
+                  class="viewer-shell__button viewer-shell__button--ghost"
+                  (click)="clearSearch()"
+                >
+                  クリア
+                </button>
+              </div>
+              <div class="viewer-shell__panel-body">
+                <div class="viewer-shell__form-row">
+                  <input
+                    #searchInput
+                    class="viewer-shell__input viewer-shell__input--grow"
+                    type="search"
+                    placeholder="キーワード"
+                    [ngModel]="searchQuery()"
+                    (ngModelChange)="searchQuery.set($event)"
+                    (keydown.enter)="performSearch()"
+                  />
+                  <button
+                    type="button"
+                    class="viewer-shell__button"
+                    (click)="performSearch()"
+                    [disabled]="search.isSearching()"
+                  >
+                    検索
+                  </button>
+                </div>
+                @if (search.isSearching()) {
+                  <div class="viewer-shell__helper-text">検索中...</div>
+                }
+                @if (search.searchResults().length) {
+                  <div class="viewer-shell__search-list">
+                    @for (section of searchSections(); track section.page) {
+                      <div class="viewer-shell__search-section">
+                        <div class="viewer-shell__search-section-header">
+                          <span class="viewer-shell__search-section-label">p{{ section.page }}</span>
+                          <span class="viewer-shell__search-section-count">{{ section.hits.length }}</span>
+                        </div>
+                        <div class="viewer-shell__search-items">
+                          @for (hit of section.hits; track hit.id) {
+                            <a
+                              class="viewer-shell__search-item"
+                              [href]="'#' + pageAnchorId(hit.page)"
+                              (click)="focusSearchHit(hit, $event)"
+                              [attr.title]="hit.context"
+                            >
+                              <span class="viewer-shell__search-item-context">{{ hit.context }}</span>
+                            </a>
+                          }
+                        </div>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            </section>
           }
-        </div>
+
+          @if (flags.markers) {
+            <section class="viewer-shell__panel">
+              <div class="viewer-shell__panel-header">
+                <h3 class="viewer-shell__panel-title">ハイライト</h3>
+                <span class="viewer-shell__badge">{{ highlightCount() }}</span>
+              </div>
+              <div class="viewer-shell__panel-body">
+                <div class="viewer-shell__helper-text">
+                  ページ上で右クリックし「選択範囲をハイライト」を選択してください。
+                </div>
+                <div class="viewer-shell__highlight-list">
+                  @for (section of highlightSections(); track trackHighlightSection($index, section)) {
+                    <div class="viewer-shell__highlight-section">
+                      <div class="viewer-shell__highlight-section-header">
+                        <span class="viewer-shell__highlight-section-label">p{{ section.page }}</span>
+                        <span class="viewer-shell__highlight-section-count">{{ section.highlights.length }}</span>
+                      </div>
+                      <div class="viewer-shell__highlight-items">
+                        @for (highlight of section.highlights; track trackHighlightItem($index, highlight)) {
+                          <div
+                            class="viewer-shell__highlight-item"
+                            [class.viewer-shell__highlight-item--selected]="isSelectedMarker(highlight.id)"
+                            (click)="focusMarker(highlight, $event)"
+                            (keydown.enter)="focusMarker(highlight, $event)"
+                            tabindex="0"
+                          >
+                            <span
+                              class="viewer-shell__highlight-item-swatch"
+                              [style.--swatch-color]="highlight.color"
+                            ></span>
+                            <span
+                              class="viewer-shell__highlight-item-title"
+                              [attr.title]="highlightLabel(highlight)"
+                            >
+                              {{ highlightLabel(highlight) }}
+                            </span>
+                            @if (!isReadOnlyMarker(highlight)) {
+                              <button
+                                class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger viewer-shell__button--compact viewer-shell__highlight-item-delete"
+                                type="button"
+                                (click)="removeHighlight(highlight.id); $event.stopPropagation()"
+                              >
+                                削除
+                              </button>
+                            }
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            </section>
+          }
+
+          @if (flags.comments) {
+            <section class="viewer-shell__panel">
+              <div class="viewer-shell__panel-header">
+                <h3 class="viewer-shell__panel-title">コメント一覧</h3>
+                <span class="viewer-shell__badge">{{ annotations.commentCount() }}</span>
+              </div>
+              <div class="viewer-shell__panel-body">
+                <div class="viewer-shell__helper-text">
+                  ページ上で右クリックし「コメントを追加」を選択してください。
+                </div>
+                <div class="viewer-shell__comment-list">
+                  @for (section of commentSections(); track trackCommentSection($index, section)) {
+                    <div class="viewer-shell__comment-section">
+                      <div class="viewer-shell__comment-section-header">
+                        <span class="viewer-shell__comment-section-label">p{{ section.page }}</span>
+                        <span class="viewer-shell__comment-section-count">{{ section.comments.length }}</span>
+                      </div>
+                      <div class="viewer-shell__comment-items">
+                        @for (comment of section.comments; track trackComment($index, comment)) {
+                          <div
+                            class="viewer-shell__comment-item"
+                            [class.viewer-shell__comment-item--selected]="isSelectedComment(comment.id)"
+                            (click)="focusComment(comment, $event)"
+                            (keydown.enter)="focusComment(comment, $event)"
+                            tabindex="0"
+                          >
+                            @if (!isReadOnlyComment(comment)) {
+                              <button
+                                class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger viewer-shell__button--compact viewer-shell__comment-item-delete"
+                                type="button"
+                                (click)="removeComment(comment.id); $event.stopPropagation()"
+                              >
+                                削除
+                              </button>
+                            }
+                            <span class="viewer-shell__comment-item-title" [attr.title]="commentTitle(comment)">
+                              {{ commentTitle(comment) }}
+                            </span>
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            </section>
+          }
+
+          @if (flags.ocr) {
+            <section class="viewer-shell__panel">
+              <div class="viewer-shell__panel-header">
+                <h3 class="viewer-shell__panel-title">OCR とテキスト抽出</h3>
+              </div>
+              <div class="viewer-shell__panel-body">
+                <div class="viewer-shell__card viewer-shell__ocr-setup">
+                  <div class="viewer-shell__ocr-controls">
+                    <div class="viewer-shell__ocr-field">
+                      <label class="viewer-shell__ocr-label" for="ocr-scope">対象</label>
+                      <select
+                        id="ocr-scope"
+                        class="viewer-shell__select"
+                        [ngModel]="ocrScope()"
+                        (ngModelChange)="ocrScope.set($event)"
+                      >
+                        <option value="page">ページ</option>
+                        <option value="all">全ページ</option>
+                      </select>
+                    </div>
+                    @if (ocrScope() === 'page') {
+                      <div class="viewer-shell__ocr-field viewer-shell__ocr-field--page">
+                        <label class="viewer-shell__ocr-label" for="ocr-page">ページ</label>
+                        <input
+                          id="ocr-page"
+                          class="viewer-shell__input"
+                          type="number"
+                          min="1"
+                          [max]="pdf.pageCount() || 1"
+                          [ngModel]="selectedOcrPage()"
+                          (ngModelChange)="selectedOcrPage.set($event)"
+                        />
+                      </div>
+                    }
+                    <button
+                      type="button"
+                      class="viewer-shell__button viewer-shell__ocr-run"
+                      (click)="runOcr()"
+                      [disabled]="ocr.isRunning()"
+                    >
+                      実行
+                    </button>
+                  </div>
+                  <div class="viewer-shell__helper-text viewer-shell__ocr-hint">
+                    全ページは処理に時間がかかる場合があります。
+                  </div>
+                </div>
+                @if (ocr.isRunning()) {
+                  <div class="viewer-shell__helper-text">OCR 実行中...</div>
+                }
+                @if (ocr.result(); as result) {
+                  <div class="viewer-shell__card">
+                    <div class="viewer-shell__card-row">
+                      <span class="viewer-shell__tag">{{ ocrResultTag(result) }}</span>
+                      <span class="viewer-shell__helper-text">{{ result.durationMs }} ms</span>
+                    </div>
+                    <div class="viewer-shell__form-row">
+                      <button
+                        type="button"
+                        class="viewer-shell__button viewer-shell__button--ghost"
+                        (click)="copyOcrResult()"
+                      >
+                        クリップボードへコピー
+                      </button>
+                      <button
+                        type="button"
+                        class="viewer-shell__button viewer-shell__button--ghost"
+                        (click)="exportOcrResult()"
+                      >
+                        テキストで保存
+                      </button>
+                    </div>
+                    @if (ocrActionMessage()) {
+                      <div class="viewer-shell__helper-text">{{ ocrActionMessage() }}</div>
+                    }
+                    <pre>{{ result.text }}</pre>
+                  </div>
+                }
+              </div>
+            </section>
+          }
+        }
+
+        @if (rightDockTab() === 'compare' && flags.compare) {
+          <section class="viewer-shell__panel">
+            <div class="viewer-shell__panel-header">
+              <h3 class="viewer-shell__panel-title">PDF ファイル比較</h3>
+              <button
+                type="button"
+                class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--danger"
+                (click)="clearCompareMode()"
+                [disabled]="compare.isRunning() || !compare.compareTargetSource()"
+              >
+                比較解除
+              </button>
+            </div>
+            <div class="viewer-shell__panel-body">
+              <label class="viewer-shell__file-picker">
+                <input
+                  class="viewer-shell__file-picker-input"
+                  type="file"
+                  accept="application/pdf"
+                  (change)="onCompareFileChange($event)"
+                />
+                <span>比較 PDF を選択</span>
+              </label>
+              @if (compare.compareTargetName()) {
+                <div class="viewer-shell__helper-text">対象: {{ compare.compareTargetName() }}</div>
+              }
+              @if (compare.isRunning()) {
+                <div class="viewer-shell__helper-text">比較中...</div>
+              }
+              @if (compare.result()) {
+                <div class="viewer-shell__card">
+                  <p>{{ compare.result()?.note }}</p>
+                  @if (compare.result()?.changedPages?.length) {
+                    <div class="viewer-shell__compare-pages">
+                      <span class="viewer-shell__helper-text">変更ページ</span>
+                      <div class="viewer-shell__page-chips">
+                        @for (page of compare.result()?.changedPages ?? []; track $index) {
+                          <button
+                            type="button"
+                            class="viewer-shell__button viewer-shell__button--ghost viewer-shell__button--small"
+                            (click)="jumpToComparePage(page)"
+                          >
+                            p{{ page }}
+                          </button>
+                        }
+                      </div>
+                    </div>
+                  } @else {
+                    <p class="viewer-shell__helper-text">変更ページ: なし</p>
+                  }
+                </div>
+              }
+            </div>
+          </section>
+        }
       </div>
-    </div>
-  }
+      <div
+        class="viewer-shell__dock-resizer viewer-shell__dock-resizer--right"
+        (pointerdown)="startDockResize('right', $event)"
+        aria-label="右ドックの幅を調整"
+      ></div>
+    </aside>
+  </div>
 </div>

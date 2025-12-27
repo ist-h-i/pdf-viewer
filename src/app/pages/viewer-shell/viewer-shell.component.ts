@@ -105,6 +105,36 @@ type HighlightSection = {
   highlights: Marker[];
 };
 
+type SearchSection = {
+  page: number;
+  hits: SearchHit[];
+};
+
+type LeftDockTab = 'library' | 'thumbnails';
+
+type RightDockTab = 'inspector' | 'lists' | 'compare';
+
+type DockState = {
+  leftOpen: boolean;
+  rightOpen: boolean;
+  leftWidth: number;
+  rightWidth: number;
+  leftTab: LeftDockTab;
+  rightTab: RightDockTab;
+};
+
+type DockResizeState = {
+  side: 'left' | 'right';
+  startClientX: number;
+  startWidth: number;
+};
+
+type StatusItem = {
+  label: string;
+  variant: 'error' | 'loading' | 'info';
+  title?: string;
+};
+
 type CommentResizeAxis = 'bubbleWidth' | 'bubbleHeight' | 'bubbleBoth';
 
 type CommentResizeState = {
@@ -171,6 +201,12 @@ const COMMENT_BUBBLE_MAX_WIDTH = 520;
 const COMMENT_BUBBLE_MIN_HEIGHT = 80;
 const COMMENT_BUBBLE_MAX_HEIGHT = 420;
 const COMMENT_TITLE_FALLBACK = 'コメントタイトル';
+const MAX_STATUS_PILLS = 3;
+const DOCK_DEFAULT_WIDTH = 320;
+const DOCK_MIN_WIDTH = 260;
+const DOCK_MAX_WIDTH = 420;
+const DOCK_COLLAPSED_WIDTH = 56;
+const DOCK_STORAGE_KEY = 'viewer-shell:dock-state';
 
 @Component({
   selector: 'app-viewer-shell',
@@ -185,6 +221,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   @ViewChildren('replyTextarea') private replyTextareas!: QueryList<ElementRef<HTMLTextAreaElement>>;
   @ViewChildren('pageCanvas') private pageCanvases!: QueryList<ElementRef<HTMLCanvasElement>>;
   @ViewChildren('pageTextLayer') private pageTextLayers!: QueryList<ElementRef<HTMLElement>>;
+  @ViewChildren('thumbnailCanvas') private thumbnailCanvases!: QueryList<ElementRef<HTMLCanvasElement>>;
   @ViewChildren('comparePageCanvas')
   private comparePageCanvases!: QueryList<ElementRef<HTMLCanvasElement>>;
   @ViewChildren('comparePageTextLayer')
@@ -195,6 +232,10 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   @ViewChild('comparePagesHost') private comparePagesHost?: ElementRef<HTMLElement>;
   @ViewChild('pdfViewerHost') private pdfViewerHost?: ElementRef<HTMLElement>;
   @ViewChild('comparePdfViewerHost') private comparePdfViewerHost?: ElementRef<HTMLElement>;
+  @ViewChild('importInput') private importInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('searchInput') private searchInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('pageInputField') private pageInputField?: ElementRef<HTMLInputElement>;
+  @ViewChild('toolsMenu') private toolsMenu?: ElementRef<HTMLElement>;
 
   protected readonly searchQuery = signal('');
   protected readonly ocrScope = signal<OcrScope>('page');
@@ -222,6 +263,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   protected readonly editingTitleCommentId = signal<string | null>(null);
   protected readonly showObjects = signal(true);
   protected readonly isDownloading = signal(false);
+  protected readonly toolsMenuOpen = signal(false);
+  protected readonly leftDockOpen = signal(true);
+  protected readonly rightDockOpen = signal(true);
+  protected readonly leftDockTab = signal<LeftDockTab>('library');
+  protected readonly rightDockTab = signal<RightDockTab>('lists');
+  protected readonly leftDockWidth = signal(DOCK_DEFAULT_WIDTH);
+  protected readonly rightDockWidth = signal(DOCK_DEFAULT_WIDTH);
+  protected readonly dockCollapsedWidth = DOCK_COLLAPSED_WIDTH;
   protected readonly highlightSwatches = HIGHLIGHT_SWATCHES;
   protected readonly selectedHighlightColor = signal(HIGHLIGHT_SWATCHES[0].color);
   protected readonly commentLayoutSettings = signal<CommentLayoutSettings>({
@@ -231,6 +280,23 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   protected readonly ocrActionMessage = signal('');
   protected readonly pageOverlays = signal<PageOverlay[]>([]);
   protected readonly comparePageOverlays = signal<PageOverlay[]>([]);
+  protected readonly pageNumbers = computed(() =>
+    Array.from({ length: this.pdf.pageCount() }, (_value, index) => index + 1)
+  );
+  protected readonly selectedMarker = computed(() => {
+    const id = this.selectedMarkerId();
+    if (!id) {
+      return null;
+    }
+    return this.annotations.allMarkers().find((marker) => marker.id === id) ?? null;
+  });
+  protected readonly selectedComment = computed(() => {
+    const id = this.selectedCommentId();
+    if (!id) {
+      return null;
+    }
+    return this.annotations.allComments().find((comment) => comment.id === id) ?? null;
+  });
   protected readonly commentSections = computed<CommentSection[]>(() => {
     const grouped = new Map<number, CommentCard[]>();
     this.annotations.allComments().forEach((comment) => {
@@ -259,7 +325,47 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       .sort(([a], [b]) => a - b)
       .map(([page, highlights]) => ({ page, highlights }));
   });
+  protected readonly searchSections = computed<SearchSection[]>(() => {
+    const grouped = new Map<number, SearchHit[]>();
+    this.search.searchResults().forEach((hit) => {
+      const list = grouped.get(hit.page);
+      if (list) {
+        list.push(hit);
+      } else {
+        grouped.set(hit.page, [hit]);
+      }
+    });
+    return Array.from(grouped.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([page, hits]) => ({ page, hits }));
+  });
   protected readonly highlightCount = computed(() => this.annotations.markerCount());
+
+  protected readonly statusItems = computed<StatusItem[]>(() => {
+    const items: StatusItem[] = [];
+    const error = this.pdf.lastError();
+    if (error) {
+      items.push({ label: error, variant: 'error', title: error });
+    }
+    if (this.pdf.isLoading()) {
+      items.push({ label: '読み込み中...', variant: 'loading' });
+    }
+    if (this.ocr.isRunning()) {
+      items.push({ label: 'OCR 実行中...', variant: 'loading' });
+    }
+    if (this.isDownloading()) {
+      items.push({ label: 'ダウンロード中...', variant: 'loading' });
+    }
+    if (this.flags.compare && this.compare.compareTargetSource()) {
+      const name = this.compare.compareTargetName() || 'ON';
+      items.push({ label: `Compare: ${name}`, variant: 'info', title: `Compare: ${name}` });
+    }
+    return items;
+  });
+  protected readonly visibleStatusItems = computed(() => this.statusItems().slice(0, MAX_STATUS_PILLS));
+  protected readonly statusOverflowCount = computed(() =>
+    Math.max(0, this.statusItems().length - MAX_STATUS_PILLS)
+  );
 
   protected readonly hasPdf = computed(() => this.pdf.pageCount() > 0);
   protected readonly zoomPercent = computed(() => Math.round(this.pdf.zoom() * 100));
@@ -274,7 +380,6 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected readonly isDragOver = signal(false);
-  protected readonly isLibraryOpen = signal(false);
 
   protected pdfSource(): string | undefined {
     return this.pdf.getCurrentFileSource() ?? undefined;
@@ -292,10 +397,15 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   private readonly renderedCompareCanvasPages = new Set<number>();
   private baseRenderQueue: Promise<void> = Promise.resolve();
   private compareRenderQueue: Promise<void> = Promise.resolve();
+  private thumbnailRenderQueue: Promise<void> = Promise.resolve();
   private baseRenderToken = 0;
   private compareRenderToken = 0;
+  private thumbnailRenderToken = 0;
   private pageRenderSubscription?: Subscription;
   private compareRenderSubscription?: Subscription;
+  private thumbnailRenderSubscription?: Subscription;
+  private thumbnailObserver: IntersectionObserver | null = null;
+  private readonly thumbnailInFlight = new WeakSet<HTMLCanvasElement>();
   private readonly textLayouts = new Map<number, PageTextLayout>();
   private readonly compareTextLayouts = new Map<number, PageTextLayout>();
   private readonly diffHighlights = signal<Record<number, HighlightRect[]>>({});
@@ -305,8 +415,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   private compareScrollContainer: HTMLElement | null = null;
   private pdfScrollRaf: number | null = null;
   private compareScrollRaf: number | null = null;
+  private pageSliderAnimationRaf: number | null = null;
+  private pageSliderInputRaf: number | null = null;
+  private pendingPageSliderValue: number | null = null;
+  private pendingPageSliderSnapped: number | null = null;
+  private isPageSliderDragging = false;
   private isSyncingScroll = false;
   private dragState: DragState | null = null;
+  private dockResizeState: DockResizeState | null = null;
   private jumpTargetPage: number | null = null;
   private dragCounter = 0;
   protected readonly isBrowser: boolean;
@@ -323,6 +439,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   ) {
     this.isBrowser = isPlatformBrowser(this.platformId);
     this.configurePdfWorker();
+    this.restoreDockState();
     this.library.setSelectionResetHandler(() => this.resetSwitchState());
   }
 
@@ -338,21 +455,93 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     target[workerKey] = workerSrc;
   }
 
+  private restoreDockState(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(DOCK_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as Partial<DockState>;
+      if (typeof parsed.leftOpen === 'boolean') {
+        this.leftDockOpen.set(parsed.leftOpen);
+      }
+      if (typeof parsed.rightOpen === 'boolean') {
+        this.rightDockOpen.set(parsed.rightOpen);
+      }
+      if (typeof parsed.leftWidth === 'number') {
+        this.leftDockWidth.set(this.normalizeDockWidth(parsed.leftWidth));
+      }
+      if (typeof parsed.rightWidth === 'number') {
+        this.rightDockWidth.set(this.normalizeDockWidth(parsed.rightWidth));
+      }
+      if (parsed.leftTab === 'library' || parsed.leftTab === 'thumbnails') {
+        this.leftDockTab.set(parsed.leftTab);
+      }
+      if (parsed.rightTab === 'compare' && !this.flags.compare) {
+        this.rightDockTab.set('lists');
+      } else if (
+        parsed.rightTab === 'inspector' ||
+        parsed.rightTab === 'lists' ||
+        parsed.rightTab === 'compare'
+      ) {
+        this.rightDockTab.set(parsed.rightTab);
+      }
+    } catch (err) {
+      console.warn('Failed to restore dock state.', err);
+    }
+  }
+
+  private persistDockState(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    const state: DockState = {
+      leftOpen: this.leftDockOpen(),
+      rightOpen: this.rightDockOpen(),
+      leftWidth: this.leftDockWidth(),
+      rightWidth: this.rightDockWidth(),
+      leftTab: this.leftDockTab(),
+      rightTab: this.rightDockTab()
+    };
+    try {
+      localStorage.setItem(DOCK_STORAGE_KEY, JSON.stringify(state));
+    } catch (err) {
+      console.warn('Failed to persist dock state.', err);
+    }
+  }
+
+  private normalizeDockWidth(width: number): number {
+    if (!Number.isFinite(width)) {
+      return DOCK_DEFAULT_WIDTH;
+    }
+    return this.clamp(width, DOCK_MIN_WIDTH, DOCK_MAX_WIDTH);
+  }
+
   async ngAfterViewInit(): Promise<void> {
     this.syncDomRefs();
     this.syncCompareDomRefs();
     this.setupPageRendering();
+    this.setupThumbnailRendering();
     this.setupFileDropListeners();
-    this.setupLibraryKeyListeners();
+    this.setupGlobalKeyListeners();
+    this.setupGlobalClickListeners();
   }
 
   ngOnDestroy(): void {
     this.teardownScrollListeners();
     this.teardownDragListeners();
     this.teardownFileDropListeners();
-    this.teardownLibraryKeyListeners();
+    this.teardownGlobalKeyListeners();
+    this.teardownGlobalClickListeners();
+    this.teardownDockResizeListeners();
+    this.teardownPageSliderRafs();
     this.pageRenderSubscription?.unsubscribe();
     this.compareRenderSubscription?.unsubscribe();
+    this.thumbnailRenderSubscription?.unsubscribe();
+    this.teardownThumbnailObserver();
     this.library.setSelectionResetHandler(null);
   }
 
@@ -368,6 +557,154 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     });
     this.queueBaseRender();
     this.queueCompareRender();
+  }
+
+  private setupThumbnailRendering(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      this.thumbnailRenderSubscription = this.thumbnailCanvases.changes.subscribe(() => {
+        this.queueThumbnailRender();
+      });
+      this.queueThumbnailRender();
+      return;
+    }
+
+    this.thumbnailObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) {
+            return;
+          }
+          const canvas = entry.target as HTMLCanvasElement;
+          void this.renderThumbnailCanvasIfNeeded(canvas);
+        });
+      },
+      { root: null, rootMargin: '240px 0px', threshold: 0.01 }
+    );
+
+    this.thumbnailRenderSubscription = this.thumbnailCanvases.changes.subscribe(() => {
+      this.observeThumbnailCanvases();
+    });
+    this.observeThumbnailCanvases();
+  }
+
+  private teardownThumbnailObserver(): void {
+    this.thumbnailObserver?.disconnect();
+    this.thumbnailObserver = null;
+  }
+
+  private observeThumbnailCanvases(): void {
+    if (!this.thumbnailObserver) {
+      this.queueThumbnailRender();
+      return;
+    }
+    this.thumbnailObserver.disconnect();
+    this.thumbnailCanvases.forEach((canvasRef) => {
+      this.thumbnailObserver?.observe(canvasRef.nativeElement);
+    });
+  }
+
+  private queueThumbnailRender(): void {
+    const token = this.thumbnailRenderToken;
+    this.thumbnailRenderQueue = this.thumbnailRenderQueue
+      .then(() => this.renderThumbnailCanvases(token))
+      .catch((err) => {
+        console.warn('Failed to render PDF thumbnails.', err);
+      });
+  }
+
+  private async renderThumbnailCanvases(token: number): Promise<void> {
+    if (!this.isBrowser || token !== this.thumbnailRenderToken) {
+      return;
+    }
+    if (this.leftDockTab() !== 'thumbnails') {
+      return;
+    }
+    const canvases = this.thumbnailCanvases.toArray();
+    for (const canvasRef of canvases) {
+      if (token !== this.thumbnailRenderToken) {
+        return;
+      }
+      await this.renderThumbnailCanvasIfNeeded(canvasRef.nativeElement, token);
+    }
+  }
+
+  private async renderThumbnailCanvasIfNeeded(
+    canvas: HTMLCanvasElement,
+    token = this.thumbnailRenderToken
+  ): Promise<void> {
+    if (!this.isBrowser || token !== this.thumbnailRenderToken) {
+      return;
+    }
+    if (this.leftDockTab() !== 'thumbnails') {
+      return;
+    }
+    const pageNumber = this.readPageNumber(canvas);
+    if (!pageNumber) {
+      return;
+    }
+    if (canvas.dataset['thumbnailToken'] === String(token)) {
+      return;
+    }
+    if (this.thumbnailInFlight.has(canvas)) {
+      return;
+    }
+    this.thumbnailInFlight.add(canvas);
+    try {
+      await this.renderPageThumbnail(pageNumber, canvas, token);
+      if (token === this.thumbnailRenderToken) {
+        canvas.dataset['thumbnailToken'] = String(token);
+      }
+    } catch (err) {
+      console.warn(`Failed to render thumbnail for page ${pageNumber}.`, err);
+    } finally {
+      this.thumbnailInFlight.delete(canvas);
+    }
+  }
+
+  private async renderPageThumbnail(
+    pageNumber: number,
+    canvas: HTMLCanvasElement,
+    token: number
+  ): Promise<void> {
+    if (token !== this.thumbnailRenderToken) {
+      return;
+    }
+    const page = await this.pdf.getPage(pageNumber);
+    if (!page || token !== this.thumbnailRenderToken) {
+      return;
+    }
+
+    const frame = canvas.parentElement as HTMLElement | null;
+    const targetWidth = Math.max(1, Math.round(frame?.clientWidth ?? canvas.clientWidth ?? 96));
+    const targetHeight = Math.max(1, Math.round(frame?.clientHeight ?? targetWidth / 0.75));
+    const baseViewport = page.getViewport({ scale: 1 });
+    const scaleForWidth = baseViewport.width ? targetWidth / baseViewport.width : 1;
+    const scaleForHeight = baseViewport.height ? targetHeight / baseViewport.height : scaleForWidth;
+    const scale = Math.min(scaleForWidth, scaleForHeight);
+    const viewport = page.getViewport({ scale });
+    const outputScale = Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2);
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      return;
+    }
+
+    canvas.width = Math.floor(viewport.width * outputScale);
+    canvas.height = Math.floor(viewport.height * outputScale);
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
+
+    context.save();
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.restore();
+
+    const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
+    await page.render({ canvasContext: context, viewport, transform }).promise;
   }
 
   private queueBaseRender(): void {
@@ -661,6 +998,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return comment.origin === 'pdf';
   }
 
+  protected canEditMarker(marker: Marker): boolean {
+    return this.isEditableMarkerId(marker.id);
+  }
+
+  protected canEditComment(comment: CommentCard): boolean {
+    return this.isEditableCommentId(comment.id);
+  }
+
   protected isEditingTitle(id: string): boolean {
     return this.editingTitleCommentId() === id;
   }
@@ -751,6 +1096,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     }
     this.selectedMarkerId.set(marker.id);
     this.selectedCommentId.set(null);
+    this.setRightDockTab('inspector');
     this.scrollMarkerIntoView(marker);
   }
 
@@ -763,6 +1109,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     }
     this.selectedCommentId.set(comment.id);
     this.selectedMarkerId.set(null);
+    this.setRightDockTab('inspector');
     this.scrollCommentIntoView(comment);
   }
 
@@ -1070,6 +1417,15 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.jumpToPage(parsed);
   }
 
+  protected onPageSliderPointerDown(): void {
+    this.isPageSliderDragging = true;
+    this.teardownPageSliderRafs();
+  }
+
+  protected onPageSliderPointerUp(): void {
+    this.isPageSliderDragging = false;
+  }
+
   protected onPageSliderInput(event: Event): void {
     if (!this.hasPdf()) {
       return;
@@ -1078,9 +1434,33 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (value === null) {
       return;
     }
-    const clamped = this.clampPageNumber(value);
-    this.pageSliderValue.set(clamped);
-    this.pageInput.set(String(clamped));
+    this.cancelPageSliderAnimationRaf();
+    const clamped = this.clampSliderValue(value);
+    const snapped = this.clampPageNumber(Math.round(clamped));
+
+    if (!this.isBrowser) {
+      this.pageSliderValue.set(clamped);
+      this.pageInput.set(String(snapped));
+      return;
+    }
+
+    this.pendingPageSliderValue = clamped;
+    this.pendingPageSliderSnapped = snapped;
+    if (this.pageSliderInputRaf !== null) {
+      return;
+    }
+    this.pageSliderInputRaf = requestAnimationFrame(() => {
+      this.pageSliderInputRaf = null;
+      const pendingValue = this.pendingPageSliderValue;
+      const pendingSnapped = this.pendingPageSliderSnapped;
+      this.pendingPageSliderValue = null;
+      this.pendingPageSliderSnapped = null;
+      if (pendingValue === null || pendingSnapped === null) {
+        return;
+      }
+      this.pageSliderValue.set(pendingValue);
+      this.pageInput.set(String(pendingSnapped));
+    });
   }
 
   protected onPageSliderChange(event: Event): void {
@@ -1088,11 +1468,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       return;
     }
     const value = this.readRangeValue(event);
+    this.isPageSliderDragging = false;
+    this.cancelPageSliderInputRaf(true);
     if (value === null) {
       this.syncPageInput();
       return;
     }
-    this.jumpToPage(value);
+    const snapped = this.clampPageNumber(Math.round(value));
+    this.jumpToPage(snapped);
   }
 
   protected async zoomIn(): Promise<void> {
@@ -1356,6 +1739,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     });
   }
 
+  protected toggleToolsMenu(): void {
+    this.toolsMenuOpen.update((open) => !open);
+  }
+
+  protected closeToolsMenu(): void {
+    this.toolsMenuOpen.set(false);
+  }
+
   protected selectHighlightColor(color: string): void {
     this.selectedHighlightColor.set(color);
   }
@@ -1489,6 +1880,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.editingTitleCommentId.set(null);
     this.replyDrafts.set({});
     this.titleDrafts.set({});
+    this.thumbnailRenderToken += 1;
+    this.observeThumbnailCanvases();
     this.resetPageJumpState();
     this.resetViewState();
   }
@@ -1557,13 +1950,115 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return { x: Number(x.toFixed(4)), y: Number(y.toFixed(4)) };
   }
 
-  protected openLibraryDialog(): void {
-    this.isLibraryOpen.set(true);
+  protected openLibraryDock(): void {
+    this.setLeftDockTab('library');
     void this.library.ensureThumbnails();
   }
 
-  protected closeLibraryDialog(): void {
-    this.isLibraryOpen.set(false);
+  protected openThumbnailDock(): void {
+    this.setLeftDockTab('thumbnails');
+  }
+
+  protected toggleLeftDock(): void {
+    this.leftDockOpen.update((open) => !open);
+    this.persistDockState();
+  }
+
+  protected toggleRightDock(): void {
+    this.rightDockOpen.update((open) => !open);
+    this.persistDockState();
+  }
+
+  protected setLeftDockTab(tab: LeftDockTab): void {
+    this.leftDockTab.set(tab);
+    this.leftDockOpen.set(true);
+    if (tab === 'library') {
+      void this.library.ensureThumbnails();
+    }
+    this.persistDockState();
+  }
+
+  protected setRightDockTab(tab: RightDockTab): void {
+    if (tab === 'compare' && !this.flags.compare) {
+      return;
+    }
+    this.rightDockTab.set(tab);
+    this.rightDockOpen.set(true);
+    this.persistDockState();
+  }
+
+  protected openSearchPanel(): void {
+    if (!this.flags.search) {
+      return;
+    }
+    this.setRightDockTab('lists');
+    this.deferFocus(this.searchInput);
+  }
+
+  protected openOcrPanel(): void {
+    if (!this.flags.ocr) {
+      return;
+    }
+    this.setRightDockTab('lists');
+  }
+
+  protected openComparePanel(): void {
+    if (!this.flags.compare) {
+      return;
+    }
+    this.setRightDockTab('compare');
+  }
+
+  protected startDockResize(side: 'left' | 'right', event: PointerEvent): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const startWidth = side === 'left' ? this.leftDockWidth() : this.rightDockWidth();
+    this.dockResizeState = {
+      side,
+      startClientX: event.clientX,
+      startWidth
+    };
+    document.addEventListener('pointermove', this.handleDockResizeMove);
+    document.addEventListener('pointerup', this.handleDockResizeEnd);
+    document.addEventListener('pointercancel', this.handleDockResizeEnd);
+  }
+
+  private handleDockResizeMove = (event: PointerEvent): void => {
+    if (!this.dockResizeState) {
+      return;
+    }
+    const delta = event.clientX - this.dockResizeState.startClientX;
+    const rawWidth =
+      this.dockResizeState.side === 'left'
+        ? this.dockResizeState.startWidth + delta
+        : this.dockResizeState.startWidth - delta;
+    const nextWidth = this.normalizeDockWidth(rawWidth);
+    if (this.dockResizeState.side === 'left') {
+      this.leftDockWidth.set(nextWidth);
+    } else {
+      this.rightDockWidth.set(nextWidth);
+    }
+  };
+
+  private handleDockResizeEnd = (): void => {
+    if (!this.dockResizeState) {
+      return;
+    }
+    this.dockResizeState = null;
+    this.teardownDockResizeListeners();
+    this.persistDockState();
+  };
+
+  private teardownDockResizeListeners(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    document.removeEventListener('pointermove', this.handleDockResizeMove);
+    document.removeEventListener('pointerup', this.handleDockResizeEnd);
+    document.removeEventListener('pointercancel', this.handleDockResizeEnd);
   }
 
   protected async selectLibraryItem(id: string): Promise<void> {
@@ -1572,7 +2067,6 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!wasSelected) {
       this.afterLibrarySelection();
     }
-    this.closeLibraryDialog();
   }
 
   protected async selectPrevPdf(): Promise<void> {
@@ -1591,6 +2085,26 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.afterLibrarySelection();
   }
 
+  private openFilePicker(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    this.importInput?.nativeElement?.click();
+  }
+
+  private focusPageInput(): void {
+    this.deferFocus(this.pageInputField);
+  }
+
+  private deferFocus(target?: ElementRef<HTMLElement> | ElementRef<HTMLInputElement>): void {
+    if (!this.isBrowser || !target) {
+      return;
+    }
+    setTimeout(() => {
+      target.nativeElement.focus();
+    }, 0);
+  }
+
   private async importPdfFiles(files: File[]): Promise<void> {
     if (!files.length) {
       return;
@@ -1606,6 +2120,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   private afterLibrarySelection(): void {
     this.selectedOcrPage.set(1);
     this.resetPageJumpState();
+    void this.library.ensureThumbnails();
     this.queueBaseRender();
     this.queueCompareRender();
   }
@@ -1630,27 +2145,118 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     document.removeEventListener('drop', this.handleDocumentDrop);
   }
 
-  private setupLibraryKeyListeners(): void {
+  private setupGlobalClickListeners(): void {
     if (!this.isBrowser) {
       return;
     }
-    document.addEventListener('keydown', this.handleLibraryKeydown);
+    document.addEventListener('click', this.handleGlobalClick);
   }
 
-  private teardownLibraryKeyListeners(): void {
+  private teardownGlobalClickListeners(): void {
     if (!this.isBrowser) {
       return;
     }
-    document.removeEventListener('keydown', this.handleLibraryKeydown);
+    document.removeEventListener('click', this.handleGlobalClick);
   }
 
-  private handleLibraryKeydown = (event: KeyboardEvent): void => {
-    if (event.key !== 'Escape' || !this.isLibraryOpen()) {
+  private setupGlobalKeyListeners(): void {
+    if (!this.isBrowser) {
       return;
     }
-    event.preventDefault();
-    this.closeLibraryDialog();
+    document.addEventListener('keydown', this.handleGlobalKeydown);
+  }
+
+  private teardownGlobalKeyListeners(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    document.removeEventListener('keydown', this.handleGlobalKeydown);
+  }
+
+  private handleGlobalKeydown = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') {
+      this.closeContextMenu();
+      this.closeToolsMenu();
+      this.selectedMarkerId.set(null);
+      this.selectedCommentId.set(null);
+      return;
+    }
+
+    if (this.shouldIgnoreHotkey(event)) {
+      return;
+    }
+
+    const key = event.key;
+    const lowerKey = key.toLowerCase();
+    const hasMeta = event.metaKey || event.ctrlKey;
+
+    if (hasMeta && lowerKey === 'f') {
+      if (this.flags.search) {
+        event.preventDefault();
+        this.openSearchPanel();
+      }
+      return;
+    }
+
+    if (hasMeta && lowerKey === 'o') {
+      event.preventDefault();
+      this.openFilePicker();
+      return;
+    }
+
+    if (hasMeta && lowerKey === 'g') {
+      event.preventDefault();
+      this.focusPageInput();
+      return;
+    }
+
+    if (hasMeta && key === '[') {
+      event.preventDefault();
+      void this.selectPrevPdf();
+      return;
+    }
+
+    if (hasMeta && key === ']') {
+      event.preventDefault();
+      void this.selectNextPdf();
+      return;
+    }
+
+    if (!hasMeta && lowerKey === 'p') {
+      this.focusPageInput();
+      return;
+    }
+
+    if (!hasMeta && lowerKey === 'l') {
+      this.toggleLeftDock();
+      return;
+    }
+
+    if (!hasMeta && lowerKey === 'r') {
+      this.toggleRightDock();
+    }
   };
+
+  private handleGlobalClick = (event: MouseEvent): void => {
+    if (!this.toolsMenuOpen()) {
+      return;
+    }
+    const target = event.target as Node | null;
+    const menu = this.toolsMenu?.nativeElement ?? null;
+    if (!target || !menu || menu.contains(target)) {
+      return;
+    }
+    this.closeToolsMenu();
+  };
+
+  private shouldIgnoreHotkey(event: KeyboardEvent): boolean {
+    const target = event.target as HTMLElement | null;
+    if (!target) {
+      return false;
+    }
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+  }
 
   private handleDocumentDragEnter = (event: DragEvent): void => {
     if (!this.isFileDrag(event)) {
@@ -2177,6 +2783,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     if (!this.hasPdf()) {
       return;
     }
+    if (this.isPageSliderDragging) {
+      return;
+    }
     const container = this.pdfScrollContainer;
     if (!container) {
       return;
@@ -2384,21 +2993,119 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return this.clamp(pageNumber, 1, pageCount);
   }
 
+  private clampSliderValue(value: number): number {
+    const pageCount = this.pdf.pageCount();
+    if (pageCount <= 0) {
+      return 1;
+    }
+    return this.clamp(value, 1, pageCount);
+  }
+
+  private prefersReducedMotion(): boolean {
+    if (!this.isBrowser) {
+      return true;
+    }
+    try {
+      return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch {
+      return false;
+    }
+  }
+
+  private teardownPageSliderRafs(): void {
+    this.cancelPageSliderAnimationRaf();
+    this.cancelPageSliderInputRaf(false);
+  }
+
+  private cancelPageSliderAnimationRaf(): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    if (this.pageSliderAnimationRaf !== null) {
+      cancelAnimationFrame(this.pageSliderAnimationRaf);
+      this.pageSliderAnimationRaf = null;
+    }
+  }
+
+  private cancelPageSliderInputRaf(flush: boolean): void {
+    if (!this.isBrowser) {
+      return;
+    }
+    if (this.pageSliderInputRaf !== null) {
+      cancelAnimationFrame(this.pageSliderInputRaf);
+      this.pageSliderInputRaf = null;
+    }
+    const pendingValue = this.pendingPageSliderValue;
+    const pendingSnapped = this.pendingPageSliderSnapped;
+    this.pendingPageSliderValue = null;
+    this.pendingPageSliderSnapped = null;
+    if (flush && pendingValue !== null && pendingSnapped !== null) {
+      this.pageSliderValue.set(pendingValue);
+      this.pageInput.set(String(pendingSnapped));
+    }
+  }
+
+  private setPageSliderValue(value: number, mode: 'immediate' | 'animate'): void {
+    const clamped = this.clampSliderValue(value);
+    if (mode === 'immediate' || this.isPageSliderDragging || this.prefersReducedMotion()) {
+      this.cancelPageSliderAnimationRaf();
+      this.pageSliderValue.set(clamped);
+      return;
+    }
+    this.animatePageSliderValue(clamped);
+  }
+
+  private animatePageSliderValue(target: number): void {
+    if (!this.isBrowser) {
+      this.pageSliderValue.set(target);
+      return;
+    }
+    this.cancelPageSliderAnimationRaf();
+    const start = this.pageSliderValue();
+    const delta = Math.abs(target - start);
+    if (delta < 0.001) {
+      this.pageSliderValue.set(this.clampSliderValue(target));
+      return;
+    }
+    const durationMs = this.clamp(90 + delta * 14, 90, 260);
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+    let startTime: number | null = null;
+
+    const tick = (now: number) => {
+      if (startTime === null) {
+        startTime = now;
+      }
+      const t = this.clamp((now - startTime) / durationMs, 0, 1);
+      const eased = easeOutCubic(t);
+      const next = start + (target - start) * eased;
+      this.pageSliderValue.set(this.clampSliderValue(next));
+      if (t < 1) {
+        this.pageSliderAnimationRaf = requestAnimationFrame(tick);
+        return;
+      }
+      this.pageSliderAnimationRaf = null;
+      this.pageSliderValue.set(this.clampSliderValue(target));
+    };
+
+    this.pageSliderAnimationRaf = requestAnimationFrame(tick);
+  }
+
   private setCurrentPage(pageNumber: number): void {
     const clamped = this.clampPageNumber(pageNumber);
+    const sliderMatches = Math.abs(this.pageSliderValue() - clamped) < 0.001;
     if (
       this.currentPage() === clamped &&
       this.pageInput() === String(clamped) &&
-      this.pageSliderValue() === clamped
+      sliderMatches
     ) {
       return;
     }
     this.currentPage.set(clamped);
     this.pageInput.set(String(clamped));
-    this.pageSliderValue.set(clamped);
+    this.setPageSliderValue(clamped, 'animate');
   }
 
-  private jumpToPage(pageNumber: number): void {
+  protected jumpToPage(pageNumber: number): void {
     if (!this.hasPdf()) {
       return;
     }
@@ -2414,8 +3121,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   private syncPageInput(): void {
-    this.pageInput.set(String(this.currentPage()));
-    this.pageSliderValue.set(this.currentPage());
+    const current = this.currentPage();
+    this.pageInput.set(String(current));
+    this.setPageSliderValue(current, 'immediate');
   }
 
   private parsePageInput(value: string): number | null {
@@ -2454,6 +3162,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   private resetPageJumpState(): void {
+    this.teardownPageSliderRafs();
     this.currentPage.set(1);
     this.pageInput.set('1');
     this.pageSliderValue.set(1);
@@ -3421,13 +4130,3 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     this.annotations.setSearchHighlights(markers);
   }
 }
-
-
-
-
-
-
-
-
-
-

@@ -1,7 +1,7 @@
 # ページ番号指定ジャンプ 仕様・詳細設計
 
-対象: `pdf-viewer` / `docs/issues.md` 新規開発機能 **4. ページ番号指定ジャンプ**  
-関連: 既存のスクロール仕様（`docs/focus-scroll-design.md`）、複数PDF切替（`docs/multi-pdf-library-design.md`）
+対象: `pdf-viewer` / `docs/planning/issues.md` 新規開発機能 **4. ページ番号指定ジャンプ**  
+関連: 既存のスクロール仕様（`docs/design/focus-scroll-design.md`）、複数PDF切替（`docs/design/multi-pdf-library-design.md`）
 
 ---
 
@@ -66,7 +66,7 @@
 `pageCount` は既存 `pdf.pageCount()` を参照する。
 
 ### 4.2 ジャンプ処理
-既存の `scrollToPage(pageNumber)` を使用する（`docs/focus-scroll-design.md` と整合）。
+既存の `scrollToPage(pageNumber)` を使用する（`docs/design/focus-scroll-design.md` と整合）。
 
 ジャンプトリガー:
 - 入力欄 `keydown.enter`
@@ -106,9 +106,8 @@ HTML:
 
 ---
 
-## 6. 受け入れ条件（`docs/issues.md`対応）
+## 6. 受け入れ条件（`docs/planning/issues.md`対応）
 - 任意ページに数秒以内でジャンプできる（極端に重いPDFは除く）
 - 不正入力時に破綻せず、ユーザに分かるフィードバックがある（=入力が元に戻る/丸められる）
 - スクロール/表示に追従して現在ページが更新される
 - PDF切替時にページ入力欄が正しく切り替わる（ページ数/現在ページ）
-

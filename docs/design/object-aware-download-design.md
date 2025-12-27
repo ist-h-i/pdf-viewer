@@ -1,7 +1,7 @@
 # オブジェクトON/OFFに応じたPDF再出力（ダウンロード） 詳細設計
 
-対象: `pdf-viewer` / `docs/issues.md` 新規開発機能 **3. オブジェクト状態の有無でPDFをダウンロード（再出力）**  
-関連: 注釈入出力の背景（`docs/pdf-annotation-investigation.md`）、ハイライト（`docs/highlight-design.md`）、コメント（`docs/comment-design.md`）
+対象: `pdf-viewer` / `docs/planning/issues.md` 新規開発機能 **3. オブジェクト状態の有無でPDFをダウンロード（再出力）**  
+関連: 注釈入出力の背景（`docs/investigations/pdf-annotation-investigation.md`）、ハイライト（`docs/design/highlight-design.md`）、コメント（`docs/design/comment-design.md`）
 
 ---
 
@@ -121,8 +121,7 @@ MVP:
 
 ---
 
-## 6. 受け入れ条件（`docs/issues.md`対応）
+## 6. 受け入れ条件（`docs/planning/issues.md`対応）
 - ON/OFFで出力結果が変わることがユーザに確認できる（ファイル名サフィックスで判別可能）
 - ON時に注釈付きPDFが確実にダウンロードされ、Adobe Readerで開ける
 - OFF時に注釈生成を行わず原本相当がダウンロードされる
-

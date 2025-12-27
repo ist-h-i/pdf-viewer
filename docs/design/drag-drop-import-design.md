@@ -1,7 +1,7 @@
 # PDFドラッグ&ドロップ取り込み 仕様・詳細設計
 
-対象: `pdf-viewer` / `docs/issues.md` 新規開発機能 **1. PDFのドラッグ&ドロップ取り込み**  
-関連: 複数PDFライブラリ化（`docs/multi-pdf-library-design.md`）
+対象: `pdf-viewer` / `docs/planning/issues.md` 新規開発機能 **1. PDFのドラッグ&ドロップ取り込み**  
+関連: 複数PDFライブラリ化（`docs/design/multi-pdf-library-design.md`）
 
 ---
 
@@ -110,8 +110,7 @@
 
 ---
 
-## 7. 受け入れ条件（`docs/issues.md`対応）
+## 7. 受け入れ条件（`docs/planning/issues.md`対応）
 - PDFをドロップすると表示が切り替わる（初回取り込みとして動作）
 - PDF以外は取り込まれず、ユーザに分かる形で通知される
 - 複数PDFをドロップした場合はライブラリに追加され、最後に追加したPDFが表示される
-

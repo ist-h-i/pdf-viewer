@@ -38,6 +38,8 @@
     --color-blue-600: #2563eb;
     // focus outline for selectable items (cards/comments)
     --color-blue-500: #3b82f6;
+    // hover and active borders (library cards)
+    --color-blue-400: #60a5fa;
     // accent text (pane labels/links) and swatch focus outline
     --color-blue-300: #93c5fd;
     // active ghost button text and comment count text
@@ -96,6 +98,8 @@
     --color-black-a50: rgba(0, 0, 0, 0.5);
     // deep shadow for selected comment bubble
     --color-black-a55: rgba(0, 0, 0, 0.55);
+    // modal overlays (library backdrop)
+    --color-black-a60: rgba(0, 0, 0, 0.6);
     // subtle top bar border
     --color-white-a05: rgba(255, 255, 255, 0.05);
     // unused (no references yet)
@@ -117,6 +121,8 @@
     --color-ink-deep-a60: rgba(5, 10, 20, 0.6);
     // comment bubble background
     --color-ink-deep-a92: rgba(6, 20, 32, 0.92);
+    // drag overlay dialog background
+    --color-ink-900-a90: rgba(11, 18, 32, 0.9);
 
     // comment message background
     --color-slate-900-a40: rgba(15, 23, 42, 0.4);
@@ -161,6 +167,10 @@
     --color-blue-500-a45: rgba(59, 130, 246, 0.45);
     // top bar accent glow
     --color-indigo-600-a35: rgba(79, 70, 229, 0.35);
+    // library selection glow
+    --color-blue-400-a45: rgba(96, 165, 250, 0.45);
+    // library hover border
+    --color-blue-400-a60: rgba(96, 165, 250, 0.6);
     // comment glow shadow
     --color-sky-400-a18: rgba(56, 189, 248, 0.18);
     // comment header gradient start
@@ -184,6 +194,8 @@
     --color-slate-400-a30: rgba(148, 163, 184, 0.3);
     // comment textarea border
     --color-slate-400-a35: rgba(148, 163, 184, 0.35);
+    // modal borders (library dialog)
+    --color-slate-400-a40: rgba(148, 163, 184, 0.4);
     // status pill and swatch borders
     --color-slate-400-a50: rgba(148, 163, 184, 0.5);
     // highlight swatch border
@@ -229,5 +241,40 @@
     --color-red-400-a65: rgba(248, 113, 113, 0.65);
     // error status pill border
     --color-red-400-a70: rgba(248, 113, 113, 0.7);
+
+    // semantic tokens (UI system)
+    --color-bg-0: var(--color-ink-950);
+    --color-surface-1: var(--color-slate-900);
+    --color-surface-2: var(--color-ink-900);
+    --color-surface-3: var(--color-ink-deep-a92);
+    --color-text-primary: var(--color-steel-100);
+    --color-text-secondary: var(--color-steel-200);
+    --color-text-muted: var(--color-steel-300);
+    --color-border-subtle: var(--color-slate-400-a20);
+    --color-border-default: var(--color-slate-400-a30);
+    --color-border-strong: var(--color-blue-600-a50);
+    --color-accent-1: var(--color-blue-600);
+    --color-accent-2: var(--color-violet-600);
+    --color-danger: var(--color-red-400);
+    --color-warn: var(--color-amber-400);
+
+    // radius
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 18px;
+    --radius-xl: 24px;
+
+    // shadows
+    --shadow-1: 0 10px 24px var(--color-black-a35);
+    --shadow-2: 0 18px 40px var(--color-black-a45);
+    --shadow-3: 0 30px 60px var(--color-black-a50);
+
+    // spacing scale
+    --space-4: 4px;
+    --space-8: 8px;
+    --space-12: 12px;
+    --space-16: 16px;
+    --space-24: 24px;
+    --space-32: 32px;
   }
 }

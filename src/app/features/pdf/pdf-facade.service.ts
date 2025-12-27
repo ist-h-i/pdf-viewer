@@ -165,6 +165,10 @@ export class PdfFacadeService {
     canvas.height = Math.floor(viewport.height * outputScale);
     canvas.style.width = `${viewport.width}px`;
     canvas.style.height = `${viewport.height}px`;
+    context.save();
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.restore();
     const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
     await page.render({ canvasContext: context, viewport, transform }).promise;
     return viewport;

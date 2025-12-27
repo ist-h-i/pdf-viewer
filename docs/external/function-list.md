@@ -63,10 +63,10 @@
   - PDF.js worker の参照パス定義
 
 ## 関連ドキュメント
-- コメント: [comment-design.md](comment-design.md) / [comment-uiux-redesign.md](comment-uiux-redesign.md)
-- ハイライト: [highlight-design.md](highlight-design.md) / [bug-report-selection-highlight-disabled.md](bug-report-selection-highlight-disabled.md)
-- フォーカス/スクロール: [focus-scroll-design.md](focus-scroll-design.md)
-- 複数PDFライブラリ: [multi-pdf-library-design.md](multi-pdf-library-design.md)
-- ドラッグ&ドロップ: [drag-drop-import-design.md](drag-drop-import-design.md)
-- 再出力（注釈付き/原本）: [object-aware-download-design.md](object-aware-download-design.md) / [pdf-annotation-investigation.md](pdf-annotation-investigation.md)
-- ページ番号ジャンプ: [page-jump-design.md](page-jump-design.md)
+- コメント: [comment-design.md](../design/comment-design.md) / [comment-uiux-redesign.md](uiux/comment-uiux-redesign.md)
+- ハイライト: [highlight-design.md](../design/highlight-design.md) / [bug-report-selection-highlight-disabled.md](../bug-reports/bug-report-selection-highlight-disabled.md)
+- フォーカス/スクロール: [focus-scroll-design.md](../design/focus-scroll-design.md)
+- 複数PDFライブラリ: [multi-pdf-library-design.md](../design/multi-pdf-library-design.md)
+- ドラッグ&ドロップ: [drag-drop-import-design.md](../design/drag-drop-import-design.md)
+- 再出力（注釈付き/原本）: [object-aware-download-design.md](../design/object-aware-download-design.md) / [pdf-annotation-investigation.md](../investigations/pdf-annotation-investigation.md)
+- ページ番号ジャンプ: [page-jump-design.md](../design/page-jump-design.md)

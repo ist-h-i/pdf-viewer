@@ -1,7 +1,7 @@
 # 複数PDFライブラリ（キュー） 仕様・詳細設計
 
-対象: `pdf-viewer` / `docs/issues.md` 新規開発機能 **2. 複数PDFのアップロード（キュー/ライブラリ化）**  
-関連: D&D取り込み（`docs/drag-drop-import-design.md`）、ページジャンプ（`docs/page-jump-design.md`）
+対象: `pdf-viewer` / `docs/planning/issues.md` 新規開発機能 **2. 複数PDFのアップロード（キュー/ライブラリ化）**  
+関連: D&D取り込み（`docs/design/drag-drop-import-design.md`）、ページジャンプ（`docs/design/page-jump-design.md`）
 
 ---
 
@@ -63,7 +63,7 @@ type PdfLibraryItem = {
 
 ### 3.3 ビュー状態（切替時にリセットするもの）
 要件「切替時はビューアの状態をリセット」に従い、以下は **PDF切替ごとに初期化**する。
-- スクロール位置/ページ入力（`docs/page-jump-design.md`）
+- スクロール位置/ページ入力（`docs/design/page-jump-design.md`）
 - 検索クエリ/検索結果（`SearchFacadeService` / search highlights）
 - OCR結果（`OcrFacadeService`）
 - 比較対象（`CompareFacadeService`）
@@ -210,9 +210,8 @@ sequenceDiagram
 
 ---
 
-## 9. 受け入れ条件（`docs/issues.md`対応）
+## 9. 受け入れ条件（`docs/planning/issues.md`対応）
 - 一覧から任意のPDFへ確実に切り替えられる
 - 現在選択中が明確に分かる
 - 前/次で順序に従って切り替えられる（先頭/末尾は無効化）
 - 切替時に検索/OCR/比較/スクロールなどのビュー状態が破綻せず初期化される
-
