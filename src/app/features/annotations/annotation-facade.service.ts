@@ -1,5 +1,5 @@
 import { Injectable, computed, signal } from '@angular/core';
-import { CommentCard, CommentMessage, Marker } from '../../core/models';
+import { CommentCard, CommentMessage, Marker, TextOffsets } from '../../core/models';
 
 const DEFAULT_COMMENT_BUBBLE_WIDTH = 260;
 const DEFAULT_COMMENT_BUBBLE_HEIGHT = 140;
@@ -39,7 +39,8 @@ export class AnnotationFacadeService {
     label = '新規ハイライト',
     color = 'var(--color-highlight-default)',
     source: Marker['source'] = 'selection',
-    text?: string
+    text?: string,
+    textOffsets?: TextOffsets
   ): Marker {
     const marker: Marker = {
       id: crypto.randomUUID ? crypto.randomUUID() : `marker-${Date.now()}`,
@@ -49,6 +50,7 @@ export class AnnotationFacadeService {
       rects,
       source,
       text,
+      textOffsets: textOffsets ? { ...textOffsets } : undefined,
       origin: 'app'
     };
     if (source === 'search') {
@@ -71,7 +73,7 @@ export class AnnotationFacadeService {
 
   moveMarker(id: string, rects: Marker['rects']): void {
     this.selectionHighlights.update((list) =>
-      list.map((m) => (m.id === id ? { ...m, rects } : m))
+      list.map((m) => (m.id === id ? { ...m, rects, textOffsets: undefined } : m))
     );
   }
 
@@ -222,7 +224,8 @@ export class AnnotationFacadeService {
   private cloneMarkers(markers: Marker[]): Marker[] {
     return markers.map((marker) => ({
       ...marker,
-      rects: marker.rects.map((rect) => ({ ...rect }))
+      rects: marker.rects.map((rect) => ({ ...rect })),
+      textOffsets: marker.textOffsets ? { ...marker.textOffsets } : undefined
     }));
   }
 

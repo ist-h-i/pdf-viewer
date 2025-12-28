@@ -12,6 +12,11 @@ export interface HighlightRect {
   height: number;
 }
 
+export interface TextOffsets {
+  start: number;
+  end: number;
+}
+
 export interface Marker {
   id: string;
   page: number;
@@ -19,6 +24,7 @@ export interface Marker {
   label: string;
   rects: HighlightRect[];
   text?: string;
+  textOffsets?: TextOffsets;
   source: 'search' | 'selection';
   origin?: 'app' | 'pdf';
 }

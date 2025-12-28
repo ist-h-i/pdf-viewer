@@ -27,8 +27,11 @@ type PdfJsAnnotationData = {
   quadPoints?: ArrayLike<number> | null;
   color?: ArrayLike<number> | null;
   contents?: string;
+  contentsObj?: { str?: string; dir?: string };
   title?: string;
+  titleObj?: { str?: string; dir?: string };
   subject?: string;
+  subjectObj?: { str?: string; dir?: string };
   opacity?: number;
   popupRef?: string | null;
   parentRect?: ArrayLike<number> | null;
@@ -39,13 +42,23 @@ type PdfAnnotationImport = {
   comments: CommentCard[];
 };
 
+type PdfJsTextContent = Awaited<ReturnType<PDFPageProxy['getTextContent']>>;
+type PdfJsTextItem = PdfJsTextContent['items'][number];
+type PdfJsTextStyle = {
+  ascent?: number;
+  descent?: number;
+  vertical?: boolean;
+};
+
 const DEFAULT_HIGHLIGHT_ALPHA = 0.4;
 const DEFAULT_COMMENT_ICON_SIZE = 18;
 const DEFAULT_COMMENT_COLOR: [number, number, number] = [1, 0.92, 0.23];
-const DEFAULT_COMMENT_TITLE = 'Comment';
-const DEFAULT_IMPORTED_COMMENT_TITLE = 'PDF Comment';
-const DEFAULT_IMPORTED_HIGHLIGHT_LABEL = 'PDF Highlight';
+const DEFAULT_COMMENT_TITLE = '';
+const DEFAULT_IMPORTED_COMMENT_TITLE = '';
+const DEFAULT_IMPORTED_HIGHLIGHT_LABEL = '';
 const DEFAULT_IMPORTED_COMMENT_OFFSET = 0.12;
+const IMPORTED_HIGHLIGHT_SUBTYPES = new Set(['highlight', 'underline', 'squiggly', 'strikeout']);
+const DEFAULT_TEXT_ASCENT = 0.8;
 
 @Injectable({ providedIn: 'root' })
 export class PdfFacadeService {
@@ -289,7 +302,7 @@ export class PdfFacadeService {
       return null;
     }
     const targetViewport = viewport ?? page.getViewport({ scale: this.scale() });
-    const textContent = await page.getTextContent();
+    const textContent = await page.getTextContent({ disableNormalization: true });
     container.innerHTML = '';
     container.style.width = `${targetViewport.width}px`;
     container.style.height = `${targetViewport.height}px`;
@@ -299,7 +312,9 @@ export class PdfFacadeService {
       viewport: targetViewport
     });
     await textLayer.render();
-    const layout = this.captureTextLayout(pageNumber, container, hostElement);
+    const layout =
+      this.buildTextLayoutFromTextContent(pageNumber, textContent, targetViewport, pdfjs) ??
+      this.captureTextLayout(pageNumber, container, hostElement);
     if (layout) {
       this.textLayouts.set(pageNumber, layout);
       this.textCache.set(pageNumber, layout.text);
@@ -362,6 +377,175 @@ export class PdfFacadeService {
       height: containerRect.height,
       text: textParts.join(''),
       spans
+    };
+  }
+
+  private buildTextLayoutFromTextContent(
+    pageNumber: number,
+    textContent: PdfJsTextContent,
+    viewport: PageViewport,
+    pdfjs: typeof import('pdfjs-dist')
+  ): PageTextLayout | null {
+    const items = textContent.items ?? [];
+    if (items.length === 0) {
+      return null;
+    }
+    const rawDims = viewport.rawDims as {
+      pageWidth?: number;
+      pageHeight?: number;
+      pageX?: number;
+      pageY?: number;
+    };
+    const viewBox = viewport.viewBox ?? [0, 0, viewport.width, viewport.height];
+    const pageWidth = rawDims?.pageWidth ?? viewBox[2] - viewBox[0];
+    const pageHeight = rawDims?.pageHeight ?? viewBox[3] - viewBox[1];
+    const pageX = rawDims?.pageX ?? viewBox[0] ?? 0;
+    const pageY = rawDims?.pageY ?? viewBox[1] ?? 0;
+    if (!pageWidth || !pageHeight) {
+      return null;
+    }
+    // Match PDF.js TextLayer's page-unit transform to keep rects aligned with the text layer.
+    const pageTransform = [1, 0, 0, -1, -pageX, pageY + pageHeight];
+    const styles = (textContent as { styles?: Record<string, PdfJsTextStyle> }).styles ?? {};
+    const spans: TextSpanRects[] = [];
+    const textParts: string[] = [];
+    let cursor = 0;
+    items.forEach((item) => {
+      const text = typeof (item as { str?: string }).str === 'string' ? (item as { str: string }).str : '';
+      const length = text.length;
+      if (text) {
+        const fontName = (item as { fontName?: string }).fontName;
+        const style = fontName ? styles[fontName] ?? null : null;
+        const rect = this.buildHighlightRectFromTextItem(
+          item,
+          style,
+          pageTransform,
+          pageWidth,
+          pageHeight,
+          pdfjs.Util
+        );
+        if (rect) {
+          spans.push({
+            start: cursor,
+            end: cursor + length,
+            text,
+            rects: [rect]
+          });
+        }
+      }
+      textParts.push(text);
+      cursor += length;
+    });
+    return {
+      page: pageNumber,
+      width: pageWidth,
+      height: pageHeight,
+      text: textParts.join(''),
+      spans
+    };
+  }
+
+  private buildHighlightRectFromTextItem(
+    item: PdfJsTextItem,
+    style: PdfJsTextStyle | null,
+    pageTransform: number[],
+    pageWidth: number,
+    pageHeight: number,
+    util: typeof import('pdfjs-dist').Util
+  ): HighlightRect | null {
+    const transform = (item as { transform?: number[] }).transform ?? null;
+    if (!Array.isArray(transform) || transform.length < 6) {
+      return null;
+    }
+    const width = Number((item as { width?: number }).width ?? 0);
+    const height = Number((item as { height?: number }).height ?? 0);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return null;
+    }
+    const tx = util.transform(pageTransform, transform);
+    let angle = Math.atan2(tx[1], tx[0]);
+    if (style?.vertical) {
+      angle += Math.PI / 2;
+    }
+    const fontHeight = Math.hypot(tx[2], tx[3]);
+    if (!Number.isFinite(fontHeight) || fontHeight <= 0) {
+      return null;
+    }
+    const ascent = typeof style?.ascent === 'number' ? style.ascent : DEFAULT_TEXT_ASCENT;
+    const fontAscent = fontHeight * ascent;
+    let left = 0;
+    let top = 0;
+    if (Math.abs(angle) < 0.0001) {
+      left = tx[4];
+      top = tx[5] - fontAscent;
+    } else {
+      left = tx[4] + fontAscent * Math.sin(angle);
+      top = tx[5] - fontAscent * Math.cos(angle);
+    }
+    const rectWidth = style?.vertical ? height : width;
+    const rectHeight = fontHeight;
+    if (!Number.isFinite(rectWidth) || !Number.isFinite(rectHeight) || rectWidth <= 0 || rectHeight <= 0) {
+      return null;
+    }
+    const bounds = this.buildAxisAlignedBoundsFromRotatedRect(left, top, rectWidth, rectHeight, angle);
+    return this.normalizeRectFromPageUnits(bounds, pageWidth, pageHeight);
+  }
+
+  private buildAxisAlignedBoundsFromRotatedRect(
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+    angle: number
+  ): { left: number; top: number; width: number; height: number } {
+    if (Math.abs(angle) < 0.0001) {
+      return { left, top, width, height };
+    }
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const points = [
+      { x: left, y: top },
+      { x: left + width, y: top },
+      { x: left, y: top + height },
+      { x: left + width, y: top + height }
+    ];
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    points.forEach((point) => {
+      const dx = point.x - left;
+      const dy = point.y - top;
+      const x = left + dx * cos - dy * sin;
+      const y = top + dx * sin + dy * cos;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    });
+    return {
+      left: minX,
+      top: minY,
+      width: maxX - minX,
+      height: maxY - minY
+    };
+  }
+
+  private normalizeRectFromPageUnits(
+    rect: { left: number; top: number; width: number; height: number },
+    pageWidth: number,
+    pageHeight: number
+  ): HighlightRect {
+    const round4 = (value: number): number => Number(value.toFixed(4));
+    const left = (rect.left / pageWidth) * 100;
+    const top = (rect.top / pageHeight) * 100;
+    const width = (rect.width / pageWidth) * 100;
+    const height = (rect.height / pageHeight) * 100;
+    return {
+      left: round4(left),
+      top: round4(top),
+      width: round4(width),
+      height: round4(height)
     };
   }
 
@@ -441,11 +625,17 @@ export class PdfFacadeService {
           usedPopups.add(popupRef);
         }
         const popup = popupEntry.annotation;
+        const contents = this.readPdfJsAnnotationText(annotation, 'contents');
+        const title = this.readPdfJsAnnotationText(annotation, 'title');
+        const subject = this.readPdfJsAnnotationText(annotation, 'subject');
+        const popupContents = this.readPdfJsAnnotationText(popup, 'contents');
+        const popupTitle = this.readPdfJsAnnotationText(popup, 'title');
+        const popupSubject = this.readPdfJsAnnotationText(popup, 'subject');
         const merged: PdfJsAnnotationData = {
           ...annotation,
-          contents: annotation.contents?.trim() ? annotation.contents : popup.contents,
-          title: annotation.title?.trim() ? annotation.title : popup.title,
-          subject: annotation.subject?.trim() ? annotation.subject : popup.subject
+          contents: contents.trim() ? contents : popupContents,
+          title: title.trim() ? title : popupTitle,
+          subject: subject.trim() ? subject : popupSubject
         };
         const rectSource = annotation.rect ?? popup.parentRect ?? popup.rect ?? null;
         return { annotation: merged, rectSource };
@@ -455,13 +645,13 @@ export class PdfFacadeService {
         if (subtype === 'popup') {
           return;
         }
-        if (subtype === 'highlight') {
+        if (subtype && IMPORTED_HIGHLIGHT_SUBTYPES.has(subtype)) {
           const rects = this.buildHighlightRectsFromAnnotation(annotation, viewport);
           if (!rects.length) {
             return;
           }
-          const contents = annotation.contents?.trim() ?? '';
-          const subject = annotation.subject?.trim() ?? '';
+          const contents = this.readPdfJsAnnotationText(annotation, 'contents').trim();
+          const subject = this.readPdfJsAnnotationText(annotation, 'subject').trim();
           const label = contents || subject || DEFAULT_IMPORTED_HIGHLIGHT_LABEL;
           const text = subject || (contents ? contents : undefined);
           markers.push({
@@ -508,6 +698,23 @@ export class PdfFacadeService {
       });
     }
     return { markers, comments };
+  }
+
+  private readPdfJsAnnotationText(
+    annotation: PdfJsAnnotationData,
+    field: 'contents' | 'title' | 'subject'
+  ): string {
+    const direct = annotation[field];
+    if (typeof direct === 'string') {
+      return direct;
+    }
+    const objectValue =
+      field === 'contents'
+        ? annotation.contentsObj
+        : field === 'title'
+          ? annotation.titleObj
+          : annotation.subjectObj;
+    return typeof objectValue?.str === 'string' ? objectValue.str : '';
   }
 
   private async buildAnnotatedPdfBytes(annotations: PdfAnnotationExport): Promise<Uint8Array> {
@@ -792,14 +999,17 @@ export class PdfFacadeService {
     const bubbleX = this.clamp(anchorX + offsetX, 0, 1);
     const bubbleY = this.clamp(anchorY + offsetY, 0, 1);
 
-    const rawContents = annotation.contents?.trim() ?? '';
+    const rawContents = this.readPdfJsAnnotationText(annotation, 'contents').trim();
     const lines = rawContents
       ? rawContents
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter((line) => line.length > 0)
       : [];
-    let title = annotation.title?.trim() || annotation.subject?.trim() || DEFAULT_IMPORTED_COMMENT_TITLE;
+    let title =
+      this.readPdfJsAnnotationText(annotation, 'title').trim() ||
+      this.readPdfJsAnnotationText(annotation, 'subject').trim() ||
+      DEFAULT_IMPORTED_COMMENT_TITLE;
     if (lines.length && title && lines[0] === title) {
       lines.shift();
     }

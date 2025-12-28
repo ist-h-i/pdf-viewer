@@ -764,6 +764,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       if (!viewport) {
         continue;
       }
+      this.applyPageScaleFactor(pageElement, viewport.scale);
       const layer = layerMap.get(pageNumber);
       if (layer) {
         const layout = await this.pdf.renderTextLayer(
@@ -776,13 +777,15 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
           return;
         }
         this.textLayerElementMap.set(pageNumber, layer);
-        const syncedLayout = this.captureTextLayoutFromDom(pageNumber, layer, pageElement ?? undefined);
-        if (syncedLayout) {
-          this.textLayouts.set(pageNumber, syncedLayout);
+        let nextLayout = layout ?? null;
+        if (!nextLayout) {
+          const syncedLayout = this.captureTextLayoutFromDom(pageNumber, layer, pageElement ?? undefined);
+          nextLayout = syncedLayout ?? null;
+        }
+        if (nextLayout) {
+          this.textLayouts.set(pageNumber, nextLayout);
           this.renderedTextLayers.add(pageNumber);
-        } else if (layout) {
-          this.textLayouts.set(pageNumber, layout);
-          this.renderedTextLayers.add(pageNumber);
+          this.refreshSelectionMarkerRectsForPage(pageNumber, nextLayout);
         }
         this.updateDiffHighlightsForPage(pageNumber);
       }
@@ -827,6 +830,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       if (!viewport) {
         continue;
       }
+      this.applyPageScaleFactor(pageElement, viewport.scale);
       const layer = layerMap.get(pageNumber);
       if (layer) {
         await this.compare.renderCompareTextLayer(pageNumber, layer, viewport);
@@ -843,6 +847,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     }
 
     this.scheduleDomSync('compare');
+  }
+
+  // PDF.js text layer uses --scale-factor for font sizing and transforms.
+  private applyPageScaleFactor(pageElement: HTMLElement | null, scale: number): void {
+    if (!pageElement || !Number.isFinite(scale)) {
+      return;
+    }
+    pageElement.style.setProperty('--scale-factor', scale.toString());
   }
 
   protected onPageRendered(_event: CustomEvent): void {
@@ -863,10 +875,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       return;
     }
     this.textLayerElementMap.set(resolvedPageNumber, layer);
-    const layout = this.captureTextLayoutFromDom(resolvedPageNumber, layer);
+    const existingLayout = this.textLayouts.get(resolvedPageNumber) ?? null;
+    const layout = existingLayout ?? this.captureTextLayoutFromDom(resolvedPageNumber, layer);
     if (layout) {
-      this.textLayouts.set(resolvedPageNumber, layout);
+      if (!existingLayout) {
+        this.textLayouts.set(resolvedPageNumber, layout);
+      }
       this.renderedTextLayers.add(resolvedPageNumber);
+      this.refreshSelectionMarkerRectsForPage(resolvedPageNumber, layout);
     }
     this.updateDiffHighlightsForPage(resolvedPageNumber);
   }
@@ -1020,9 +1036,9 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
   }
 
   protected highlightLabel(highlight: Marker): string {
-    const text = highlight.text?.trim() ?? '';
     const label = highlight.label?.trim() ?? '';
-    return text || label || 'ハイライト';
+    const text = highlight.text?.trim() ?? '';
+    return label || text || 'ハイライト';
   }
 
   protected highlightStrongColor(color: string): string {
@@ -1537,8 +1553,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
         }
         const label = marker.label?.trim() ?? '';
         const text = marker.text?.trim() ?? '';
-        const contents = label || text || undefined;
-        const subject = text && text !== label ? text : undefined;
+        const contents = label || undefined;
+        const subject = text || undefined;
         highlights.push({
           id: marker.id,
           page: marker.page,
@@ -1552,8 +1568,39 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
 
     return {
       highlights,
-      comments: this.flags.comments ? this.annotations.exportComments() : []
+      comments: this.flags.comments ? this.buildCommentExport() : []
     };
+  }
+
+  private buildCommentExport(): CommentCard[] {
+    const comments = this.annotations.exportComments();
+    const drafts = this.replyDrafts();
+    if (!comments.length || Object.keys(drafts).length === 0) {
+      return comments;
+    }
+    const createdAt = Date.now();
+    return comments.map((comment) => {
+      const draft = drafts[comment.id]?.trim() ?? '';
+      if (!draft) {
+        return comment;
+      }
+      const draftMessage: CommentMessage = {
+        id: this.buildDraftMessageId(comment.id),
+        text: draft,
+        createdAt
+      };
+      return {
+        ...comment,
+        messages: [...comment.messages, draftMessage]
+      };
+    });
+  }
+
+  private buildDraftMessageId(commentId: string): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `draft-${commentId}-${crypto.randomUUID()}`;
+    }
+    return `draft-${commentId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
   private buildDownloadFileName(mode: 'original' | 'annotated'): string {
@@ -1677,6 +1724,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       state.selectionOffsets ??
       (selection ? this.getSelectionOffsets(selectionPageNumber, selection) : null);
     const validOffsets = offsets && offsets.start < offsets.end ? offsets : null;
+    const markerOffsets = validOffsets ?? undefined;
     let rects: HighlightRect[] = [];
     if (validOffsets && layout) {
       rects = this.rectsFromOffsetsInLayout(layout, validOffsets.start, validOffsets.end);
@@ -1708,7 +1756,8 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       '',
       color,
       'selection',
-      highlightTextFallback || undefined
+      highlightTextFallback || undefined,
+      markerOffsets
     );
     selection?.removeAllRanges();
     this.closeContextMenu();
@@ -3655,10 +3704,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       return null;
     }
     this.textLayerElementMap.set(pageNumber, layer);
-    const layout = this.captureTextLayoutFromDom(pageNumber, layer);
+    const existingLayout = this.textLayouts.get(pageNumber) ?? null;
+    const layout = existingLayout ?? this.captureTextLayoutFromDom(pageNumber, layer);
     if (layout) {
-      this.textLayouts.set(pageNumber, layout);
+      if (!existingLayout) {
+        this.textLayouts.set(pageNumber, layout);
+      }
       this.renderedTextLayers.add(pageNumber);
+      this.refreshSelectionMarkerRectsForPage(pageNumber, layout);
     }
     return { layer, pageNumber };
   }
@@ -3672,6 +3725,7 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       if (layout) {
         this.textLayouts.set(pageNumber, layout);
         this.renderedTextLayers.add(pageNumber);
+        this.refreshSelectionMarkerRectsForPage(pageNumber, layout);
       }
     }
   }
@@ -3781,10 +3835,14 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
         return null;
       }
       this.textLayerElementMap.set(pageNumber, layer);
-      const layout = this.captureTextLayoutFromDom(pageNumber, layer);
+      const existingLayout = this.textLayouts.get(pageNumber) ?? null;
+      const layout = existingLayout ?? this.captureTextLayoutFromDom(pageNumber, layer);
       if (layout) {
-        this.textLayouts.set(pageNumber, layout);
+        if (!existingLayout) {
+          this.textLayouts.set(pageNumber, layout);
+        }
         this.renderedTextLayers.add(pageNumber);
+        this.refreshSelectionMarkerRectsForPage(pageNumber, layout);
       }
       return { selection, pageNumber };
     }
@@ -3926,6 +3984,28 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
     return rects.filter((rect) => rect.width > 0 && rect.height > 0);
   }
 
+  private refreshSelectionMarkerRectsForPage(pageNumber: number, layout: PageTextLayout): void {
+    const markers = this.annotations
+      .exportMarkers()
+      .filter((marker) => marker.page === pageNumber && marker.textOffsets);
+    if (!markers.length) {
+      return;
+    }
+    markers.forEach((marker) => {
+      const offsets = marker.textOffsets;
+      if (!offsets || offsets.start >= offsets.end) {
+        return;
+      }
+      const rects = this.sanitizeHighlightRects(
+        this.rectsFromOffsetsInLayout(layout, offsets.start, offsets.end)
+      );
+      if (!rects.length || this.areRectsEqual(rects, marker.rects)) {
+        return;
+      }
+      this.annotations.updateMarker(marker.id, { rects });
+    });
+  }
+
   private sanitizeHighlightRects(rects: HighlightRect[]): HighlightRect[] {
     if (!rects.length) {
       return [];
@@ -4001,6 +4081,22 @@ export class ViewerShellComponent implements AfterViewInit, OnDestroy {
       merged.push(rect);
     }
     return merged;
+  }
+
+  private areRectsEqual(a: HighlightRect[], b: HighlightRect[]): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+    for (let i = 0; i < a.length; i += 1) {
+      const leftMatch = a[i].left === b[i].left;
+      const topMatch = a[i].top === b[i].top;
+      const widthMatch = a[i].width === b[i].width;
+      const heightMatch = a[i].height === b[i].height;
+      if (!leftMatch || !topMatch || !widthMatch || !heightMatch) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private rectsFromRange(range: Range, pageElement: HTMLElement): HighlightRect[] {
